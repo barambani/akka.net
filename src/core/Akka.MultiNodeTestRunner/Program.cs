@@ -14,6 +14,7 @@ using System.Linq;
 using System.Threading;
 using Akka.Actor;
 using Akka.MultiNodeTestRunner.Shared;
+using Akka.MultiNodeTestRunner.Shared.Persistence;
 using Akka.MultiNodeTestRunner.Shared.Sinks;
 using Akka.Remote.TestKit;
 using Xunit;
@@ -29,12 +30,12 @@ namespace Akka.MultiNodeTestRunner
 
         protected static IActorRef SinkCoordinator;
 
-        
+
 
         /// <summary>
         /// MultiNodeTestRunner takes the following <see cref="args"/>:
         /// 
-        /// C:\> Akka.MultiNodeTestRunner.exe [assembly name] [-Dmultinode.enable-filesink=on]
+        /// C:\> Akka.MultiNodeTestRunner.exe [assembly name] [-Dmultinode.enable-filesink=on] [-Dmultinode.output-directory={dir path}]
         /// 
         /// <list type="number">
         /// <listheader>
@@ -54,6 +55,13 @@ namespace Akka.MultiNodeTestRunner
         ///     <term>-Dmultinode.enable-filesink</term>
         ///     <description>Having this flag set means that the contents of this test run will be saved in the
         ///                 current working directory as a .JSON file.
+        ///     </description>
+        /// </item>
+        /// <item>
+        ///     <term>-Dmultinode.multinode.output-directory</term>
+        ///     <description>Setting this flag means that any persistent multi-node test runner output files
+        ///                  will be written to this directory instead of the default, which is the same folder
+        ///                  as the test binary.
         ///     </description>
         /// </item>
         /// </list>
@@ -153,9 +161,38 @@ namespace Akka.MultiNodeTestRunner
 
         static void EnableAllSinks(string assemblyName)
         {
+            var now = DateTime.UtcNow;
+
+            // if multinode.output-directory wasn't specified, the results files will be written
+            // to the same directory as the test assembly.
+            var outputDirectory = CommandLine.GetProperty("multinode.output-directory");
+
+            Func<MessageSink> createJsonFileSink = () =>
+                {
+                    var fileName = FileNameGenerator.GenerateFileName(outputDirectory, assemblyName, ".json", now);
+
+                    var jsonStoreProps = Props.Create(() =>
+                        new FileSystemMessageSinkActor(new JsonPersistentTestRunStore(), fileName, true));
+
+                    return new FileSystemMessageSink(jsonStoreProps);
+                };
+
+            Func<MessageSink> createVisualizerFileSink = () =>
+                {
+                    var fileName = FileNameGenerator.GenerateFileName(outputDirectory, assemblyName, ".html", now);
+
+                    var visualizerProps = Props.Create(() =>
+                        new FileSystemMessageSinkActor(new VisualizerPersistentTestRunStore(), fileName, true));
+
+                    return new FileSystemMessageSink(visualizerProps);
+                };
+
             var fileSystemSink = CommandLine.GetProperty("multinode.enable-filesink");
             if (!string.IsNullOrEmpty(fileSystemSink))
-                SinkCoordinator.Tell(new SinkCoordinator.EnableSink(new FileSystemMessageSink(assemblyName)));
+            {
+                SinkCoordinator.Tell(new SinkCoordinator.EnableSink(createJsonFileSink()));
+                SinkCoordinator.Tell(new SinkCoordinator.EnableSink(createVisualizerFileSink()));
+            }
         }
 
         static void CloseAllSinks()
