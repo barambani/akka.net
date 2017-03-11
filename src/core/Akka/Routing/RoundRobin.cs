@@ -1,148 +1,243 @@
 ﻿//-----------------------------------------------------------------------
 // <copyright file="RoundRobin.cs" company="Akka.NET Project">
-//     Copyright (C) 2009-2015 Typesafe Inc. <http://www.typesafe.com>
-//     Copyright (C) 2013-2015 Akka.NET project <https://github.com/akkadotnet/akka.net>
+//     Copyright (C) 2009-2016 Lightbend Inc. <http://www.lightbend.com>
+//     Copyright (C) 2013-2016 Akka.NET project <https://github.com/akkadotnet/akka.net>
 // </copyright>
 //-----------------------------------------------------------------------
 
+using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using Akka.Actor;
 using Akka.Configuration;
+using Akka.Dispatch;
 using Akka.Util;
 
 namespace Akka.Routing
 {
     /// <summary>
-    ///     Class RoundRobinRoutingLogic.
+    /// This class contains logic used by a <see cref="Router"/> to route a message to a <see cref="Routee"/> determined using round-robin.
+    /// This process has the router select from a list of routees in sequential order. When the list has been exhausted, the router iterates
+    /// again from the beginning of the list.
+    /// <note>
+    /// For concurrent calls, round robin is just a best effort.
+    /// </note>
     /// </summary>
-    public class RoundRobinRoutingLogic : RoutingLogic
+    public sealed class RoundRobinRoutingLogic : RoutingLogic
     {
+        private int _next;
 
+        /// <summary>
+        /// Initializes a new instance of the <see cref="RoundRobinRoutingLogic"/> class.
+        /// </summary>
         public RoundRobinRoutingLogic() : this(-1) {}
 
+        /// <summary>
+        /// Initializes a new instance of the <see cref="RoundRobinRoutingLogic"/> class.
+        /// </summary>
+        /// <param name="next">The index to use when starting the selection process. Note that it will start at (next + 1).</param>
         public RoundRobinRoutingLogic(int next)
         {
             _next = next;
         }
 
         /// <summary>
-        ///     The next
+        /// Picks the next <see cref="Routee"/> in the collection to receive the <paramref name="message"/>.
         /// </summary>
-        private int _next;
-
-        /// <summary>
-        ///     Selects the specified message.
-        /// </summary>
-        /// <param name="message">The message.</param>
-        /// <param name="routees">The routees.</param>
-        /// <returns>Routee.</returns>
+        /// <param name="message">The message that is being routed.</param>
+        /// <param name="routees">A collection of routees to choose from when receiving the <paramref name="message"/>.</param>
+        /// <returns>A <see cref="Routee" /> that is receives the <paramref name="message"/>.</returns>
         public override Routee Select(object message, Routee[] routees)
         {
-            if (routees == null || routees.Length == 0)
+            if (routees.Length > 0)
+            {
+                var size = routees.Length;
+                int index = (Interlocked.Increment(ref _next) & int.MaxValue)%size;
+                return routees[index < 0 ? size + index - 1 : index];
+            }
+            else
             {
                 return Routee.NoRoutee;
             }
-            return routees[(Interlocked.Increment(ref _next) & int.MaxValue) % routees.Length];
         }
     }
 
     /// <summary>
-    /// A router group that uses round-robin to select a routee. For concurrent calls,
-    /// round robin is just a best effort.
-    ///
-    /// The configuration parameter trumps the constructor arguments. This means that
-    /// if you provide `paths` during instantiation they will be ignored if
-    /// the router is defined in the configuration file for the actor being used.
+    /// This class represents a <see cref="Pool"/> router that sends messages to a <see cref="Routee"/> determined using round-robin.
+    /// This process has the router select from a list of routees in sequential order. When the list has been exhausted, the router
+    /// iterates again from the beginning of the list.
+    /// <note>
+    /// For concurrent calls, round robin is just a best effort.
+    /// </note>
     /// </summary>
-    public class RoundRobinGroup : Group
+    public sealed class RoundRobinPool : Pool
     {
-        public class RoundRobinGroupSurrogate : ISurrogate
-        {
-            public ISurrogated FromSurrogate(ActorSystem system)
-            {
-                return new RoundRobinGroup(Paths);
-            }
-
-            public string[] Paths { get; set; }
-        }
-
-        public override ISurrogate ToSurrogate(ActorSystem system)
-        {
-            return new RoundRobinGroupSurrogate
-            {
-                Paths = Paths,
-            };
-        }
-
         /// <summary>
-        ///     Initializes a new instance of the <see cref="RoundRobinGroup" /> class.
+        /// Initializes a new instance of the <see cref="RoundRobinPool"/> class.
         /// </summary>
-        /// <param name="config">The configuration.</param>
-        public RoundRobinGroup(Config config)
-            : base(config.GetStringList("routees.paths"))
+        /// <param name="config">The configuration used to configure the pool.</param>
+        public RoundRobinPool(Config config)
+            : this(
+                  nrOfInstances: config.GetInt("nr-of-instances"),
+                  resizer: Resizer.FromConfig(config),
+                  supervisorStrategy: Pool.DefaultSupervisorStrategy,
+                  routerDispatcher: Dispatchers.DefaultDispatcherId,
+                  usePoolDispatcher: config.HasPath("pool-dispatcher"))
         {
         }
 
         /// <summary>
-        ///     Initializes a new instance of the <see cref="RoundRobinGroup" /> class.
+        /// Initializes a new instance of the <see cref="RoundRobinPool"/> class.
+        /// <note>
+        /// A <see cref="RoundRobinPool"/> configured in this way uses the <see cref="Pool.DefaultSupervisorStrategy"/> supervisor strategy.
+        /// </note>
         /// </summary>
-        /// <param name="paths">The paths.</param>
-        public RoundRobinGroup(params string[] paths)
-            : base(paths)
+        /// <param name="nrOfInstances">The initial number of routees in the pool.</param>
+        public RoundRobinPool(int nrOfInstances)
+            : this(nrOfInstances, null, Pool.DefaultSupervisorStrategy, Dispatchers.DefaultDispatcherId)
+        {
+        }
+
+
+        /// <summary>
+        /// Initializes a new instance of the <see cref="RoundRobinPool"/> class.
+        /// <note>
+        /// A <see cref="RoundRobinPool"/> configured in this way uses the <see cref="Pool.DefaultSupervisorStrategy"/> supervisor strategy.
+        /// </note>
+        /// </summary>
+        /// <param name="nrOfInstances">The initial number of routees in the pool.</param>
+        /// <param name="resizer">The resizer to use when dynamically allocating routees to the pool.</param>
+        public RoundRobinPool(int nrOfInstances, Resizer resizer) : this(nrOfInstances, resizer, Pool.DefaultSupervisorStrategy, Dispatchers.DefaultDispatcherId) { }
+
+        /// <summary>
+        /// Initializes a new instance of the <see cref="RoundRobinPool"/> class.
+        /// </summary>
+        /// <param name="nrOfInstances">The initial number of routees in the pool.</param>
+        /// <param name="resizer">The resizer to use when dynamically allocating routees to the pool.</param>
+        /// <param name="supervisorStrategy">The strategy to use when supervising the pool.</param>
+        /// <param name="routerDispatcher">The dispatcher to use when passing messages to the routees.</param>
+        /// <param name="usePoolDispatcher"><c>true</c> to use the pool dispatcher; otherwise <c>false</c>.</param>
+        public RoundRobinPool(
+            int nrOfInstances,
+            Resizer resizer,
+            SupervisorStrategy supervisorStrategy,
+            string routerDispatcher,
+            bool usePoolDispatcher = false) 
+            : base(nrOfInstances, resizer, supervisorStrategy, routerDispatcher, usePoolDispatcher)
         {
         }
 
         /// <summary>
-        ///     Initializes a new instance of the <see cref="RoundRobinGroup" /> class.
+        /// Creates a router that is responsible for routing messages to routees within the provided <paramref name="system" />.
         /// </summary>
-        /// <param name="paths">The paths.</param>
-        public RoundRobinGroup(IEnumerable<string> paths) : base(paths)
-        {
-        }
-
-        /// <summary>
-        ///     Initializes a new instance of the <see cref="RoundRobinGroup" /> class.
-        /// </summary>
-        /// <param name="routees">The routees.</param>
-        public RoundRobinGroup(IEnumerable<IActorRef> routees) : base(routees)
-        {
-        }
-
-        /// <summary>
-        ///     Creates the router.
-        /// </summary>
-        /// <returns>Router.</returns>
+        /// <param name="system">The actor system that owns this router.</param>
+        /// <returns>The newly created router tied to the given system.</returns>
         public override Router CreateRouter(ActorSystem system)
         {
             return new Router(new RoundRobinRoutingLogic());
         }
 
-        public override Group WithDispatcher(string dispatcher)
+        /// <summary>
+        /// Used by the <see cref="RoutedActorCell"/> to determine the initial number of routees.
+        /// </summary>
+        /// <param name="sys">The actor system that owns this router.</param>
+        /// <returns>The number of routees associated with this pool.</returns>
+        public override int GetNrOfInstances(ActorSystem sys)
         {
-            return new RoundRobinGroup(Paths){ RouterDispatcher = dispatcher};
+            return NrOfInstances;
         }
-    }
 
-    /// <summary>
-    ///     Class RoundRobinPool.
-    /// </summary>
-    public class RoundRobinPool : Pool
-    {
-        public class RoundRobinPoolSurrogate : ISurrogate
+        /// <summary>
+        /// Creates a new <see cref="RoundRobinPool"/> router with a given <see cref="SupervisorStrategy"/>.
+        /// <note>
+        /// This method is immutable and returns a new instance of the router.
+        /// </note>
+        /// </summary>
+        /// <param name="strategy">The <see cref="SupervisorStrategy"/> used to configure the new router.</param>
+        /// <returns>A new router with the provided <paramref name="strategy"/>.</returns>
+        public RoundRobinPool WithSupervisorStrategy(SupervisorStrategy strategy)
         {
-            public ISurrogated FromSurrogate(ActorSystem system)
+            return new RoundRobinPool(NrOfInstances, Resizer, strategy, RouterDispatcher, UsePoolDispatcher);
+        }
+
+        /// <summary>
+        /// Creates a new <see cref="RoundRobinPool"/> router with a given <see cref="Resizer"/>.
+        /// <note>
+        /// This method is immutable and returns a new instance of the router.
+        /// </note>
+        /// </summary>
+        /// <param name="resizer">The <see cref="Resizer"/> used to configure the new router.</param>
+        /// <returns>A new router with the provided <paramref name="resizer"/>.</returns>
+        public RoundRobinPool WithResizer(Resizer resizer)
+        {
+            return new RoundRobinPool(NrOfInstances, resizer, SupervisorStrategy, RouterDispatcher, UsePoolDispatcher);
+        }
+
+        /// <summary>
+        /// Creates a new <see cref="RoundRobinPool"/> router with a given dispatcher id.
+        /// <note>
+        /// This method is immutable and returns a new instance of the router.
+        /// </note>
+        /// </summary>
+        /// <param name="dispatcher">The dispatcher id used to configure the new router.</param>
+        /// <returns>A new router with the provided dispatcher id.</returns>
+        public RoundRobinPool WithDispatcher(string dispatcher)
+        {
+            return new RoundRobinPool(NrOfInstances, Resizer, SupervisorStrategy, dispatcher, UsePoolDispatcher);
+        }
+
+        /// <summary>
+        /// Configure the current router with an auxiliary router for routes that it does not know how to handle.
+        /// </summary>
+        /// <param name="routerConfig">The router to use as an auxiliary source.</param>
+        /// <returns>The router configured with the auxiliary information.</returns>
+        public override RouterConfig WithFallback(RouterConfig routerConfig)
+        {
+            return OverrideUnsetConfig(routerConfig);
+        }
+
+        private RouterConfig OverrideUnsetConfig(RouterConfig other)
+        {
+            if (other is NoRouter)
             {
-                return new RoundRobinPool(NrOfInstances, Resizer, SupervisorStrategy, RouterDispatcher, UsePoolDispatcher);
+                return this;
             }
+            else
+            {
+                var pool = other as Pool;
+                if (pool != null)
+                {
+                    RoundRobinPool wssConf;
 
-            public int NrOfInstances { get; set; }
-            public bool UsePoolDispatcher { get; set; }
-            public Resizer Resizer { get; set; }
-            public SupervisorStrategy SupervisorStrategy { get; set; }
-            public string RouterDispatcher { get; set; }
+                    if (SupervisorStrategy != null
+                        && SupervisorStrategy.Equals(Pool.DefaultSupervisorStrategy)
+                        && !(pool.SupervisorStrategy.Equals(Pool.DefaultSupervisorStrategy)))
+                    {
+                        wssConf = this.WithSupervisorStrategy(pool.SupervisorStrategy);
+                    }
+                    else
+                    {
+                        wssConf = this;
+                    }
+
+                    if (wssConf.Resizer == null && pool.Resizer != null)
+                        return wssConf.WithResizer(pool.Resizer);
+
+                    return wssConf;
+                }
+                else
+                {
+                    return this;
+                }
+            }
         }
 
+        /// <summary>
+        /// Creates a surrogate representation of the current <see cref="RoundRobinPool"/>.
+        /// </summary>
+        /// <param name="system">The actor system that owns this router.</param>
+        /// <returns>The surrogate representation of the current <see cref="RoundRobinPool"/>.</returns>
         public override ISurrogate ToSurrogate(ActorSystem system)
         {
             return new RoundRobinPoolSurrogate
@@ -156,65 +251,184 @@ namespace Akka.Routing
         }
 
         /// <summary>
-
+        /// This class represents a surrogate of a <see cref="RoundRobinPool"/> router.
+        /// Its main use is to help during the serialization process.
         /// </summary>
-        /// <param name="nrOfInstances">The nr of instances.</param>
-        /// <param name="resizer">The resizer.</param>
-        /// <param name="supervisorStrategy">The supervisor strategy.</param>
-        /// <param name="routerDispatcher">The router dispatcher.</param>
-        /// <param name="usePoolDispatcher">if set to <c>true</c> [use pool dispatcher].</param>
-        public RoundRobinPool(int nrOfInstances, Resizer resizer, SupervisorStrategy supervisorStrategy,
-            string routerDispatcher, bool usePoolDispatcher = false)
-            : base(nrOfInstances, resizer, supervisorStrategy, routerDispatcher, usePoolDispatcher)
+        public class RoundRobinPoolSurrogate : ISurrogate
+        {
+            /// <summary>
+            /// Creates a <see cref="RoundRobinPool"/> encapsulated by this surrogate.
+            /// </summary>
+            /// <param name="system">The actor system that owns this router.</param>
+            /// <returns>The <see cref="RoundRobinPool"/> encapsulated by this surrogate.</returns>
+            public ISurrogated FromSurrogate(ActorSystem system)
+            {
+                return new RoundRobinPool(NrOfInstances, Resizer, SupervisorStrategy, RouterDispatcher, UsePoolDispatcher);
+            }
+
+            /// <summary>
+            /// The number of routees associated with this pool.
+            /// </summary>
+            public int NrOfInstances { get; set; }
+            /// <summary>
+            /// Determine whether or not to use the pool dispatcher. The dispatcher is defined in the
+            /// 'pool-dispatcher' configuration property in the deployment section of the router.
+            /// </summary>
+            public bool UsePoolDispatcher { get; set; }
+            /// <summary>
+            /// The resizer to use when dynamically allocating routees to the pool.
+            /// </summary>
+            public Resizer Resizer { get; set; }
+            /// <summary>
+            /// The strategy to use when supervising the pool.
+            /// </summary>
+            public SupervisorStrategy SupervisorStrategy { get; set; }
+            /// <summary>
+            /// The dispatcher to use when passing messages to the routees.
+            /// </summary>
+            public string RouterDispatcher { get; set; }
+        }
+    }
+
+    /// <summary>
+    /// This class represents a <see cref="Group"/> router that sends messages to a <see cref="Routee"/> determined using round-robin.
+    /// This process has the router select from a list of routees in sequential order. When the list has been exhausted, the router
+    /// iterates again from the beginning of the list.
+    /// <note>
+    /// For concurrent calls, round robin is just a best effort.
+    /// </note>
+    /// <note>
+    /// The configuration parameter trumps the constructor arguments. This means that
+    /// if you provide `paths` during instantiation they will be ignored if
+    /// the router is defined in the configuration file for the actor being used.
+    /// </note>
+    /// </summary>
+    public sealed class RoundRobinGroup : Group
+    {
+        /// <summary>
+        /// Initializes a new instance of the <see cref="RoundRobinGroup"/> class.
+        /// </summary>
+        /// <param name="config">
+        /// The configuration to use to lookup paths used by the group router.
+        /// <note>
+        /// If 'routees.path' is defined in the provided configuration then those paths will be used by the router.
+        /// </note>
+        /// </param>
+        public RoundRobinGroup(Config config)
+            : this(
+                  config.GetStringList("routees.paths"),
+                  Dispatchers.DefaultDispatcherId)
         {
         }
 
-        public RoundRobinPool(Config config) : base(config)
+        /// <summary>
+        /// Initializes a new instance of the <see cref="RoundRobinGroup"/> class.
+        /// </summary>
+        /// <param name="paths">A list of paths used by the group router.</param>
+        public RoundRobinGroup(params string[] paths) : this(paths, Dispatchers.DefaultDispatcherId)
         {
-            
         }
 
         /// <summary>
-        /// Simple form of RoundRobin constructor
+        /// Initializes a new instance of the <see cref="RoundRobinGroup"/> class.
         /// </summary>
-        /// <param name="nrOfInstances">The nr of instances.</param>
-        public RoundRobinPool(int nrOfInstances) : base(nrOfInstances, null, DefaultStrategy, null) { }
+        /// <param name="paths">An enumeration of actor paths used by the group router.</param>
+        public RoundRobinGroup(IEnumerable<string> paths) : this(paths, Dispatchers.DefaultDispatcherId)
+        {
+        }
 
         /// <summary>
-        /// Simple form of RoundRobin constructor
+        /// Obsolete. Use <see cref="RoundRobinGroup(IEnumerable{System.String})"/> instead.
         /// </summary>
-        /// <param name="nrOfInstances">The nr of instances.</param>
-        /// <param name="resizer">A <see cref="Resizer"/> for specifying how to grow the pool of underlying routees based on pressure</param>
-        public RoundRobinPool(int nrOfInstances, Resizer resizer) : base(nrOfInstances, resizer, DefaultStrategy, null) { }
+        /// <param name="routees">N/A</param>
+        [Obsolete("Use RoundRobinGroup constructor with IEnumerable<string> parameter")]
+        public RoundRobinGroup(IEnumerable<IActorRef> routees)
+            : this(routees.Select(c => c.Path.ToString()))
+        {
+        }
 
         /// <summary>
-        ///     Creates the router.
+        /// Initializes a new instance of the <see cref="RoundRobinGroup"/> class.
         /// </summary>
-        /// <returns>Router.</returns>
+        /// <param name="paths">A list of paths used by the group router.</param>
+        /// <param name="routerDispatcher">The dispatcher to use when passing messages to routees.</param>
+        public RoundRobinGroup(IEnumerable<string> paths, string routerDispatcher) 
+            : base(paths, routerDispatcher)
+        {
+        }
+
+        /// <summary>
+        /// Retrieves the actor paths used by this router during routee selection.
+        /// </summary>
+        /// <param name="system">The actor system that owns this router.</param>
+        /// <returns>An enumeration of actor paths used during routee selection</returns>
+        public override IEnumerable<string> GetPaths(ActorSystem system)
+        {
+            return Paths;
+        }
+
+        /// <summary>
+        /// Creates a router that is responsible for routing messages to routees within the provided <paramref name="system" />.
+        /// </summary>
+        /// <param name="system">The actor system that owns this router.</param>
+        /// <returns>The newly created router tied to the given system.</returns>
         public override Router CreateRouter(ActorSystem system)
         {
             return new Router(new RoundRobinRoutingLogic());
         }
 
-        public override Pool WithSupervisorStrategy(SupervisorStrategy strategy)
+        /// <summary>
+        /// Creates a new <see cref="RoundRobinGroup"/> router with a given dispatcher id.
+        /// <note>
+        /// This method is immutable and returns a new instance of the router.
+        /// </note>
+        /// </summary>
+        /// <param name="dispatcherId">The dispatcher id used to configure the new router.</param>
+        /// <returns>A new router with the provided dispatcher id.</returns>
+        public Group WithDispatcher(string dispatcherId)
         {
-            return new RoundRobinPool(NrOfInstances, Resizer, strategy, RouterDispatcher, UsePoolDispatcher);
+            return new RoundRobinGroup(Paths, dispatcherId);
         }
 
-        public override Pool WithResizer(Resizer resizer)
+        /// <summary>
+        /// Creates a surrogate representation of the current <see cref="RoundRobinGroup"/>.
+        /// </summary>
+        /// <param name="system">The actor system that owns this router.</param>
+        /// <returns>The surrogate representation of the current <see cref="RoundRobinGroup"/>.</returns>
+        public override ISurrogate ToSurrogate(ActorSystem system)
         {
-            return new RoundRobinPool(NrOfInstances, resizer, SupervisorStrategy, RouterDispatcher, UsePoolDispatcher);
+            return new RoundRobinGroupSurrogate
+            {
+                Paths = Paths,
+                RouterDispatcher = RouterDispatcher
+            };
         }
 
-        public override Pool WithDispatcher(string dispatcher)
+        /// <summary>
+        /// This class represents a surrogate of a <see cref="RoundRobinGroup"/> router.
+        /// Its main use is to help during the serialization process.
+        /// </summary>
+        public class RoundRobinGroupSurrogate : ISurrogate
         {
-            return new RoundRobinPool(NrOfInstances, Resizer, SupervisorStrategy, dispatcher, UsePoolDispatcher);
-        }
+            /// <summary>
+            /// Creates a <see cref="RoundRobinGroup"/> encapsulated by this surrogate.
+            /// </summary>
+            /// <param name="system">The actor system that owns this router.</param>
+            /// <returns>The <see cref="RoundRobinGroup"/> encapsulated by this surrogate.</returns>
+            public ISurrogated FromSurrogate(ActorSystem system)
+            {
+                return new RoundRobinGroup(Paths, RouterDispatcher);
+            }
 
-        public override RouterConfig WithFallback(RouterConfig routerConfig)
-        {
-            return OverrideUnsetConfig(routerConfig);
+            /// <summary>
+            /// The actor paths used by this router during routee selection.
+            /// </summary>
+            public IEnumerable<string> Paths { get; set; }
+
+            /// <summary>
+            /// The dispatcher to use when passing messages to the routees.
+            /// </summary>
+            public string RouterDispatcher { get; set; }
         }
     }
 }
-

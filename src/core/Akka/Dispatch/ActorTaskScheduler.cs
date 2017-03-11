@@ -1,95 +1,116 @@
 ﻿//-----------------------------------------------------------------------
 // <copyright file="ActorTaskScheduler.cs" company="Akka.NET Project">
-//     Copyright (C) 2009-2015 Typesafe Inc. <http://www.typesafe.com>
-//     Copyright (C) 2013-2015 Akka.NET project <https://github.com/akkadotnet/akka.net>
+//     Copyright (C) 2009-2016 Lightbend Inc. <http://www.lightbend.com>
+//     Copyright (C) 2013-2016 Akka.NET project <https://github.com/akkadotnet/akka.net>
 // </copyright>
 //-----------------------------------------------------------------------
 
 using System;
 using System.Collections.Generic;
-using System.Runtime.Remoting.Messaging;
 using System.Threading;
 using System.Threading.Tasks;
 using Akka.Actor;
 using Akka.Dispatch.SysMsg;
+using Akka.Util.Internal;
 
 namespace Akka.Dispatch
 {
-    public class AmbientState
-    {
-        public IActorRef Self { get; set; }
-        public IActorRef Sender { get; set; }
-        public object Message { get; set; }
-    }
-
+    /// <summary>
+    /// TBD
+    /// </summary>
     public class ActorTaskScheduler : TaskScheduler
     {
-        public static readonly TaskScheduler Instance = new ActorTaskScheduler();
-        public static readonly TaskFactory TaskFactory = new TaskFactory(Instance);
-        public static readonly string StateKey = "akka.state";
-        private const string Faulted = "faulted";
-        private static readonly object Outer = new object();
+        private readonly ActorCell _actorCell;
+        /// <summary>
+        /// TBD
+        /// </summary>
+        public object CurrentMessage { get; private set; }
 
-        public static void SetCurrentState(IActorRef self, IActorRef sender, object message)
+        /// <summary>
+        /// TBD
+        /// </summary>
+        /// <param name="actorCell">TBD</param>
+        internal ActorTaskScheduler(ActorCell actorCell)
         {
-            CallContext.LogicalSetData(StateKey, new AmbientState
-            {
-                Sender = sender,
-                Self = self,
-                Message = message
-            });
+            _actorCell = actorCell;
         }
 
+        /// <summary>
+        /// TBD
+        /// </summary>
+        public override int MaximumConcurrencyLevel
+        {
+            get { return 1; }
+        }
+
+        /// <summary>
+        /// TBD
+        /// </summary>
+        /// <returns>TBD</returns>
         protected override IEnumerable<Task> GetScheduledTasks()
         {
             return null;
         }
 
+        /// <summary>
+        /// TBD
+        /// </summary>
+        /// <param name="task">TBD</param>
         protected override void QueueTask(Task task)
         {
-            var s = CallContext.LogicalGetData(StateKey) as AmbientState;
-            if (task.AsyncState == Outer || s == null)
+            if ((task.CreationOptions & TaskCreationOptions.LongRunning) == TaskCreationOptions.LongRunning)
             {
-                TryExecuteTask(task);
+                // Executing a LongRunning task in an ActorTaskScheduler is bad practice, it will potentially
+                // hang the actor and starve the ThreadPool
+
+                // The best thing we can do here is force a rescheduling to at least not execute the task inline.
+                ScheduleTask(task);
                 return;
             }
 
-            //we get here if the task needs to be marshalled back to the mailbox
-            //e.g. if previous task was an IO completion
-            s = CallContext.LogicalGetData(StateKey) as AmbientState;
-
-            s.Self.Tell(new CompleteTask(s, () =>
+            // Schedule the task execution, run inline if we are already in the actor context.
+            if (ActorCell.Current == _actorCell)
             {
-                SetCurrentState(s.Self,s.Sender,s.Message);
                 TryExecuteTask(task);
-                if (task.IsFaulted)
-                    Rethrow(task, null);
-
-            }), ActorRefs.NoSender);
+            }
+            else
+            {
+                ScheduleTask(task);
+            }
         }
 
+        private void ScheduleTask(Task task)
+        {            
+            //we are in a max concurrency level 1 scheduler. reading CurrentMessage should be OK
+            _actorCell.SendSystemMessage(new ActorTaskSchedulerMessage(this, task, CurrentMessage));
+        }
+
+        /// <summary>
+        /// TBD
+        /// </summary>
+        /// <param name="task">TBD</param>
+        internal void ExecuteTask(Task task)
+        {
+            TryExecuteTask(task);
+        }
+
+        /// <summary>
+        /// TBD
+        /// </summary>
+        /// <param name="task">TBD</param>
+        /// <param name="taskWasPreviouslyQueued">TBD</param>
+        /// <returns>TBD</returns>
         protected override bool TryExecuteTaskInline(Task task, bool taskWasPreviouslyQueued)
         {
-            if (taskWasPreviouslyQueued)
-                return false;
-
-            var s = CallContext.LogicalGetData(StateKey) as AmbientState;
-            var cell = ActorCell.Current;
-
-            //Is the current cell and the current state the same?
-            if (cell != null &&
-                s != null &&
-                Equals(cell.Self, s.Self) &&
-                Equals(cell.Sender, s.Sender) &&
-                cell.CurrentMessage == s.Message)
-            {
-                var res = TryExecuteTask(task);
-                return res;
-            }
-
+            // Prevent inline execution, it will execute inline anyway in QueueTask if we
+            // are already in the actor context.
             return false;
         }
 
+        /// <summary>
+        /// TBD
+        /// </summary>
+        /// <param name="action">TBD</param>
         public static void RunTask(Action action)
         {
             RunTask(() =>
@@ -99,47 +120,72 @@ namespace Akka.Dispatch
             });
         }
 
-        public static void RunTask(Func<Task> action)
+        /// <summary>
+        /// TBD
+        /// </summary>
+        /// <param name="asyncAction">TBD</param>
+        /// <exception cref="InvalidOperationException">
+        /// This exception is thrown if this method is called outside an actor context.
+        /// </exception>
+        public static void RunTask(Func<Task> asyncAction)
         {
             var context = ActorCell.Current;
-            var mailbox = context.Mailbox;
+
+            if (context == null)
+                throw new InvalidOperationException("RunTask must be called from an actor context.");
+
+            var dispatcher = context.Dispatcher;
 
             //suspend the mailbox
-            mailbox.Suspend(MailboxSuspendStatus.AwaitingTask);
+            dispatcher.Suspend(context);
 
-            SetCurrentState(context.Self, context.Sender, null);
+            ActorTaskScheduler actorScheduler = context.TaskScheduler;
+            actorScheduler.CurrentMessage = context.CurrentMessage;
 
-            //wrap our action inside a task, so that everything executing 
-            //directly or indirectly from the action is executed on our task scheduler
+            Task<Task>.Factory.StartNew(asyncAction, CancellationToken.None, TaskCreationOptions.None, actorScheduler)
+                              .Unwrap()
+                              .ContinueWith(parent =>
+                              {
+                                  Exception exception = GetTaskException(parent);
 
-            Task.Factory.StartNew(async _ =>
-            {
+                                  if (exception == null)
+                                  {
+                                      dispatcher.Resume(context);
 
-                //start executing our action and potential promise style
-                //tasks
-                await action()
-                    //we need to use ContinueWith so that any exception is
-                    //thrown inside the actor context.
-                    //this is needed for IO completion tasks that execute out of context                    
-                    .ContinueWith(
-                        Rethrow,
-                        Faulted,
-                        TaskContinuationOptions.None);
-
-                //if mailbox was suspended, make sure we re-enable message processing again
-                mailbox.Resume(MailboxSuspendStatus.AwaitingTask);
-                context.CheckReceiveTimeout();
-            },
-                Outer,
-                CancellationToken.None,
-                TaskCreationOptions.None,
-                Instance);
+                                      context.CheckReceiveTimeout();
+                                  }
+                                  else
+                                  {
+                                      context.Self.AsInstanceOf<IInternalActorRef>().SendSystemMessage(new ActorTaskSchedulerMessage(exception, actorScheduler.CurrentMessage));
+                                  }
+                                  //clear the current message field of the scheduler
+                                  actorScheduler.CurrentMessage = null;
+                              }, actorScheduler);
         }
 
-        private static void Rethrow(Task x, object s)
+        private static Exception GetTaskException(Task task)
         {
-            //this just rethrows the exception the task contains
-            x.Wait();
+            switch (task.Status)
+            {
+                case TaskStatus.Canceled:
+                    return new TaskCanceledException();
+
+                case TaskStatus.Faulted:
+                    return TryUnwrapAggregateException(task.Exception);
+            }
+
+            return null;
+        }
+
+        private static Exception TryUnwrapAggregateException(AggregateException aggregateException)
+        {
+            if (aggregateException == null)
+                return null;
+
+            if (aggregateException.InnerExceptions.Count == 1)
+                return aggregateException.InnerExceptions[0];
+
+            return aggregateException;
         }
     }
 }

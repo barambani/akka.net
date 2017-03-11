@@ -1,7 +1,7 @@
 ﻿//-----------------------------------------------------------------------
 // <copyright file="UntypedActorWithBoundedStash.cs" company="Akka.NET Project">
-//     Copyright (C) 2009-2015 Typesafe Inc. <http://www.typesafe.com>
-//     Copyright (C) 2013-2015 Akka.NET project <https://github.com/akkadotnet/akka.net>
+//     Copyright (C) 2009-2016 Lightbend Inc. <http://www.lightbend.com>
+//     Copyright (C) 2013-2016 Akka.NET project <https://github.com/akkadotnet/akka.net>
 // </copyright>
 //-----------------------------------------------------------------------
 
@@ -52,6 +52,7 @@ namespace Akka.Actor
         /// <summary>
         /// Unstashes all messages selected by the predicate function
         /// </summary>
+        /// <param name="predicate">TBD</param>
         public void UnstashAll(Func<Envelope, bool> predicate)
         {
             CurrentStash.UnstashAll(predicate);
@@ -64,6 +65,8 @@ namespace Akka.Actor
         /// Overridden callback. Prepends all messages in the stash to the mailbox,
         /// clears the stash, stops all children, and invokes the PostStop callback.
         /// </summary>
+        /// <param name="reason">TBD</param>
+        /// <param name="message">TBD</param>
         protected override void PreRestart(Exception reason, object message)
         {
             try

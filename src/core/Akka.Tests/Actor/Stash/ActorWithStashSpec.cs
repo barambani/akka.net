@@ -1,7 +1,7 @@
 ﻿//-----------------------------------------------------------------------
 // <copyright file="ActorWithStashSpec.cs" company="Akka.NET Project">
-//     Copyright (C) 2009-2015 Typesafe Inc. <http://www.typesafe.com>
-//     Copyright (C) 2013-2015 Akka.NET project <https://github.com/akkadotnet/akka.net>
+//     Copyright (C) 2009-2016 Lightbend Inc. <http://www.lightbend.com>
+//     Copyright (C) 2013-2016 Akka.NET project <https://github.com/akkadotnet/akka.net>
 // </copyright>
 //-----------------------------------------------------------------------
 
@@ -56,6 +56,17 @@ namespace Akka.Tests.Actor.Stash
             var stasher = ActorOf<StashingTwiceActor>("stashing-actor");
             stasher.Tell("hello");
             _state.ExpectedException.Ready(TimeSpan.FromSeconds(3));
+        }
+
+        [Fact]
+        public void An_actor_Should__not_throw_an_exception_if_the_same_message_is_received_and_stashed_twice()
+        {
+            _state.ExpectedException = new TestLatch();
+            var stasher = ActorOf<StashAndReplyActor>("stashing-actor");
+            stasher.Tell("hello");
+            ExpectMsg("bye");
+            stasher.Tell("hello");
+            ExpectMsg("bye");
         }
 
         [Fact]
@@ -170,6 +181,20 @@ namespace Akka.Tests.Actor.Stash
                 ReceiveAny(_ => { }); //Do nothing
             }
 
+            public IStash Stash { get; set; }
+        }
+
+        private class StashAndReplyActor : ReceiveActor, IWithUnboundedStash
+        {
+            public StashAndReplyActor()
+            {
+                ReceiveAny(m =>
+                {
+                    Stash.Stash();
+                    Sender.Tell("bye");
+                }
+                );
+            }
             public IStash Stash { get; set; }
         }
 

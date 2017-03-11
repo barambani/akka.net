@@ -1,7 +1,7 @@
 ﻿//-----------------------------------------------------------------------
 // <copyright file="RemoteDeployer.cs" company="Akka.NET Project">
-//     Copyright (C) 2009-2015 Typesafe Inc. <http://www.typesafe.com>
-//     Copyright (C) 2013-2015 Akka.NET project <https://github.com/akkadotnet/akka.net>
+//     Copyright (C) 2009-2016 Lightbend Inc. <http://www.lightbend.com>
+//     Copyright (C) 2013-2016 Akka.NET project <https://github.com/akkadotnet/akka.net>
 // </copyright>
 //-----------------------------------------------------------------------
 
@@ -21,10 +21,21 @@ namespace Akka.Remote
     /// </summary>
     internal class RemoteDeployer : Deployer
     {
+        /// <summary>
+        /// TBD
+        /// </summary>
+        /// <param name="settings">TBD</param>
         public RemoteDeployer(Settings settings) : base(settings)
         {
         }
 
+        /// <summary>
+        /// TBD
+        /// </summary>
+        /// <param name="key">TBD</param>
+        /// <param name="config">TBD</param>
+        /// <exception cref="ConfigurationException">TBD</exception>
+        /// <returns>TBD</returns>
         public override Deploy ParseConfig(string key, Config config)
         {
             var deploy = base.ParseConfig(key, config);
@@ -41,18 +52,15 @@ namespace Akka.Remote
             }
             
             if (!string.IsNullOrWhiteSpace(remote))
-                throw new ConfigurationException(string.Format("unparseable remote node name [{0}]", remote));
+                throw new ConfigurationException($"unparseable remote node name [{remote}]");
 
             return CheckRemoteRouterConfig(deploy);
         }
 
-        /// <summary>
-        /// Used to determine if a given <paramref name="deploy"/> is an instance of <see cref="RemoteRouterConfig"/>.
-        /// </summary>
         private static Deploy CheckRemoteRouterConfig(Deploy deploy)
         {
             var nodes = deploy.Config.GetStringList("target.nodes").Select(Address.Parse).ToList();
-            if (nodes.Any() && deploy.RouterConfig != RouterConfig.NoRouter)
+            if (nodes.Any() && deploy.RouterConfig != null)
             {
                 if (deploy.RouterConfig is Pool)
                     return

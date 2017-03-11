@@ -1,7 +1,7 @@
 ﻿//-----------------------------------------------------------------------
 // <copyright file="Deadline.cs" company="Akka.NET Project">
-//     Copyright (C) 2009-2015 Typesafe Inc. <http://www.typesafe.com>
-//     Copyright (C) 2013-2015 Akka.NET project <https://github.com/akkadotnet/akka.net>
+//     Copyright (C) 2009-2016 Lightbend Inc. <http://www.lightbend.com>
+//     Copyright (C) 2013-2016 Akka.NET project <https://github.com/akkadotnet/akka.net>
 // </copyright>
 //-----------------------------------------------------------------------
 
@@ -14,21 +14,34 @@ namespace Akka.Remote
     /// </summary>
     public class Deadline
     {
+        /// <summary>
+        /// TBD
+        /// </summary>
+        /// <param name="when">TBD</param>
         public Deadline(DateTime when)
         {
             When = when;
         }
 
+        /// <summary>
+        /// TBD
+        /// </summary>
         public bool IsOverdue
         {
             get { return DateTime.UtcNow > When; }
         }
 
+        /// <summary>
+        /// TBD
+        /// </summary>
         public bool HasTimeLeft
         {
             get { return DateTime.UtcNow < When; }
         }
 
+        /// <summary>
+        /// TBD
+        /// </summary>
         public DateTime When { get; private set; }
 
         /// <summary>
@@ -38,6 +51,11 @@ namespace Akka.Remote
 
         #region Overrides
 
+        /// <summary>
+        /// TBD
+        /// </summary>
+        /// <param name="obj">TBD</param>
+        /// <returns>TBD</returns>
         public override bool Equals(object obj)
         {
             var deadlineObj = ((Deadline) obj);
@@ -49,6 +67,10 @@ namespace Akka.Remote
             return When.Equals(deadlineObj.When);
         }
 
+        /// <summary>
+        /// TBD
+        /// </summary>
+        /// <returns>TBD</returns>
         public override int GetHashCode()
         {
             return When.GetHashCode();
@@ -73,6 +95,9 @@ namespace Akka.Remote
         /// <summary>
         /// Adds a given <see cref="TimeSpan"/> to the due time of this <see cref="Deadline"/>
         /// </summary>
+        /// <param name="deadline">TBD</param>
+        /// <param name="duration">TBD</param>
+        /// <returns>TBD</returns>
         public static Deadline operator +(Deadline deadline, TimeSpan duration)
         {
             return new Deadline(deadline.When.Add(duration));
@@ -81,6 +106,9 @@ namespace Akka.Remote
         /// <summary>
         /// Adds a given <see cref="Nullable{TimeSpan}"/> to the due time of this <see cref="Deadline"/>
         /// </summary>
+        /// <param name="deadline">TBD</param>
+        /// <param name="duration">TBD</param>
+        /// <returns>TBD</returns>
         public static Deadline operator +(Deadline deadline, TimeSpan? duration)
         {
             if (duration.HasValue)

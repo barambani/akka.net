@@ -1,11 +1,12 @@
 ﻿//-----------------------------------------------------------------------
 // <copyright file="AsyncAwaitSpec.cs" company="Akka.NET Project">
-//     Copyright (C) 2009-2015 Typesafe Inc. <http://www.typesafe.com>
-//     Copyright (C) 2013-2015 Akka.NET project <https://github.com/akkadotnet/akka.net>
+//     Copyright (C) 2009-2016 Lightbend Inc. <http://www.lightbend.com>
+//     Copyright (C) 2013-2016 Akka.NET project <https://github.com/akkadotnet/akka.net>
 // </copyright>
 //-----------------------------------------------------------------------
 
 using System;
+using System.Threading;
 using System.Threading.Tasks;
 using Akka.Actor;
 using Akka.TestKit;
@@ -22,10 +23,10 @@ namespace Akka.Tests.Dispatch
             {
                 _replyTo.Tell("GotIt");
             });
-            Receive<string>(async s =>
+            ReceiveAsync<string>(async s =>
             {
                 _replyTo = Sender;
-                
+
                 await Task.Delay(TimeSpan.FromMilliseconds(100));
                 SetReceiveTimeout(TimeSpan.FromMilliseconds(100));
             });
@@ -35,7 +36,7 @@ namespace Akka.Tests.Dispatch
     {
         public AsyncActor()
         {
-            Receive<string>( async s =>
+            ReceiveAsync<string>(async s =>
             {
                 await Task.Yield();
                 await Task.Delay(TimeSpan.FromMilliseconds(100));
@@ -56,10 +57,14 @@ namespace Akka.Tests.Dispatch
             {
                 state = 1;
             });
-            Receive<string>(async _ =>
+            ReceiveAsync<string>(async m_ =>
             {
                 Self.Tell("change");
                 await Task.Delay(TimeSpan.FromSeconds(1));
+                var cell = (ActorCell) Context;
+                var current = cell.CurrentMessage;
+                //ensure we have the correct current message here
+                Assert.Same(m_, current);
                 //we expect that state should not have changed due to an incoming message
                 Sender.Tell(state);
             });
@@ -70,7 +75,7 @@ namespace Akka.Tests.Dispatch
     {
         public AsyncAwaitActor()
         {
-            Receive<string>(async _ =>
+            ReceiveAsync<string>(async _ =>
             {
                 var sender = Sender;
                 var self = Self;
@@ -79,6 +84,24 @@ namespace Akka.Tests.Dispatch
                 Assert.Same(sender, Sender);
                 Assert.Same(self, Self);
                 Sender.Tell("done");
+            });
+
+            ReceiveAsync<int>(async msg =>
+            {
+                await Task.Yield();
+                Sender.Tell("handled");
+            }, i => i > 10);
+
+            ReceiveAsync(typeof(double), async msg =>
+            {
+                await Task.Yield();
+                Sender.Tell("handled");
+            });
+
+            ReceiveAnyAsync(async msg =>
+            {
+                await Task.Yield();
+                Sender.Tell("receiveany");
             });
         }
     }
@@ -107,7 +130,7 @@ namespace Akka.Tests.Dispatch
     {
         public Asker(IActorRef other)
         {
-            Receive<string>(async _ =>
+            ReceiveAsync<string>(async _ =>
             {
                 var sender = Sender;
                 var self = Self;
@@ -184,7 +207,7 @@ namespace Akka.Tests.Dispatch
         public AsyncExceptionActor(IActorRef callback)
         {
             _callback = callback;
-            Receive<string>(async _ =>
+            ReceiveAsync<string>(async _ =>
             {
                 await Task.Yield();
                 ThrowException();
@@ -210,9 +233,9 @@ namespace Akka.Tests.Dispatch
             Receive<string>(m =>
             {
                 //this is also safe, all tasks complete in the actor context
-                RunTask(() =>
+                RunTask(async () =>
                 {
-                    Task.Delay(TimeSpan.FromSeconds(1))
+                    await Task.Delay(TimeSpan.FromSeconds(1))
                         .ContinueWith(t => { Sender.Tell("done"); });
                 });
             });
@@ -228,11 +251,11 @@ namespace Akka.Tests.Dispatch
             _callback = callback;
             Receive<string>(m =>
             {
-                RunTask(() =>
+                RunTask(async () =>
                 {
-                    Task.Delay(TimeSpan.FromSeconds(1))
+                    await Task.Delay(TimeSpan.FromSeconds(1))
                    .ContinueWith(t => { throw new Exception("foo"); });
-                });               
+                });
             });
         }
 
@@ -240,6 +263,16 @@ namespace Akka.Tests.Dispatch
         {
             _callback.Tell("done");
             base.PostRestart(reason);
+        }
+    }
+
+    public class RestartMessage
+    {
+        public object Message { get; private set; }
+
+        public RestartMessage(object message)
+        {
+            Message = message;
         }
     }
 
@@ -280,8 +313,8 @@ namespace Akka.Tests.Dispatch
         [Fact]
         public async Task Actors_should_be_able_to_block_ask_message_loop()
         {
-            var actor = Sys.ActorOf(Props.Create<AsyncAwaitActor>().WithDispatcher("akka.actor.task-dispatcher"),"Worker");
-            var asker =Sys.ActorOf(Props.Create(() => new BlockingAsker(actor)).WithDispatcher("akka.actor.task-dispatcher"),"Asker");
+            var actor = Sys.ActorOf(Props.Create<AsyncAwaitActor>().WithDispatcher("akka.actor.task-dispatcher"), "Worker");
+            var asker = Sys.ActorOf(Props.Create(() => new BlockingAsker(actor)).WithDispatcher("akka.actor.task-dispatcher"), "Asker");
             var task = asker.Ask("start", TimeSpan.FromSeconds(5));
             actor.Tell(123, ActorRefs.NoSender);
             var res = await task;
@@ -291,7 +324,7 @@ namespace Akka.Tests.Dispatch
         [Fact(Skip = "Maybe not possible to solve")]
         public async Task Actors_should_be_able_to_block_ask_self_message_loop()
         {
-            var asker = Sys.ActorOf(Props.Create(() => new BlockingAskSelf()),"Asker");
+            var asker = Sys.ActorOf(Props.Create(() => new BlockingAskSelf()), "Asker");
             var task = asker.Ask("start", TimeSpan.FromSeconds(5));
             var res = await task;
             Assert.Equal("done", res);
@@ -344,7 +377,6 @@ namespace Akka.Tests.Dispatch
             res.ShouldBe("done");
         }
 
-
         [Fact]
         public void Actor_should_be_able_to_ReceiveTimeout_after_async_operation()
         {
@@ -352,6 +384,148 @@ namespace Akka.Tests.Dispatch
 
             actor.Tell("hello");
             ExpectMsg<string>(m => m == "GotIt");
+        }
+
+        public class AsyncExceptionCatcherActor : ReceiveActor
+        {
+            private string _lastMessage;
+
+            public AsyncExceptionCatcherActor()
+            {
+                ReceiveAsync<string>(async m =>
+                {
+                    _lastMessage = m;
+                    try
+                    {
+                        // Throw an exception in the ActorTaskScheduler
+                        await Task.Factory.StartNew(() =>
+                        {
+                            throw new Exception("should not restart");
+                        });
+                    }
+                    catch (Exception)
+                    {
+                    }
+                });
+
+                Receive<int>(_ => Sender.Tell(_lastMessage, Self));
+            }
+        }
+
+        [Fact]
+        public async Task Actor_should_not_restart_if_exception_is_catched()
+        {
+            var actor = Sys.ActorOf<AsyncExceptionCatcherActor>();
+
+            actor.Tell("hello");
+
+            var lastMessage = await actor.Ask(123);
+
+            lastMessage.ShouldBe("hello");
+        }
+
+        public class AsyncFailingActor : ReceiveActor
+        {
+            public AsyncFailingActor()
+            {
+                ReceiveAsync<string>(async m =>
+                {
+                    ThrowException();
+                });
+            }
+
+            protected override void PreRestart(Exception reason, object message)
+            {
+                Sender.Tell(new RestartMessage(message), Self);
+
+                base.PreRestart(reason, message);
+            }
+
+            private static void ThrowException()
+            {
+                throw new Exception("foo");
+            }
+        }
+
+        [Fact]
+        public void Actor_PreRestart_should_give_the_failing_message()
+        {
+            var actor = Sys.ActorOf<AsyncFailingActor>();
+
+            actor.Tell("hello");
+
+            ExpectMsg<RestartMessage>(m => "hello".Equals(m.Message));
+        }
+
+        public class AsyncPipeToDelayActor : ReceiveActor
+        {
+            public AsyncPipeToDelayActor()
+            {
+                ReceiveAsync<string>(async msg =>
+                {
+                    Task.Run(() =>
+                    {
+                        Thread.Sleep(10);
+                        return msg;
+                    }).PipeTo(Sender, Self); //LogicalContext is lost?!?
+
+                    Thread.Sleep(3000);
+                });
+            }
+        }
+
+        public class AsyncReentrantActor : ReceiveActor
+        {
+            public AsyncReentrantActor()
+            {
+                ReceiveAsync<string>(async msg =>
+                {
+                    var sender = Sender;
+                    Task.Run(() =>
+                    {
+                        //Sleep to make sure the task is not completed when ContinueWith is called
+                        Thread.Sleep(100);
+                        return msg;
+                    }).ContinueWith(_ => sender.Tell(msg)); // ContinueWith will schedule with the implicit ActorTaskScheduler
+
+                    Thread.Sleep(3000);
+                });
+            }
+        }
+
+        [Fact]
+        public void ActorTaskScheduler_reentrancy_should_not_be_possible()
+        {
+            var actor = Sys.ActorOf<AsyncReentrantActor>();
+            actor.Tell("hello");
+
+            ExpectNoMsg(1000);
+        }
+
+        [Fact]
+        public void Actor_PipeTo_should_not_be_delayed_by_async_receive()
+        {
+            var actor = Sys.ActorOf<AsyncPipeToDelayActor>();
+
+            actor.Tell("hello");
+            ExpectMsg<string>(m => "hello".Equals(m), TimeSpan.FromMilliseconds(1000));
+        }
+
+        [Fact]
+        public async Task Actor_receiveasync_overloads_should_work()
+        {
+            var actor = Sys.ActorOf<AsyncAwaitActor>();
+
+            actor.Tell(11);
+            ExpectMsg<string>(m => "handled".Equals(m), TimeSpan.FromMilliseconds(1000));
+
+            actor.Tell(9);
+            ExpectMsg<string>(m => "receiveany".Equals(m), TimeSpan.FromMilliseconds(1000));
+
+            actor.Tell(1.0);
+            ExpectMsg<string>(m => "handled".Equals(m), TimeSpan.FromMilliseconds(1000));
+
+
         }
     }
 }

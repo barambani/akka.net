@@ -1,7 +1,7 @@
 ﻿//-----------------------------------------------------------------------
 // <copyright file="TestTransport.cs" company="Akka.NET Project">
-//     Copyright (C) 2009-2015 Typesafe Inc. <http://www.typesafe.com>
-//     Copyright (C) 2013-2015 Akka.NET project <https://github.com/akkadotnet/akka.net>
+//     Copyright (C) 2009-2016 Lightbend Inc. <http://www.lightbend.com>
+//     Copyright (C) 2013-2016 Akka.NET project <https://github.com/akkadotnet/akka.net>
 // </copyright>
 //-----------------------------------------------------------------------
 
@@ -17,44 +17,72 @@ using Google.ProtocolBuffers;
 namespace Akka.Remote.Transport
 {
     /// <summary>
-    /// Transport implementation used for testing.
-    /// 
-    /// The TestTransport is basically shared memory between actor systems. It can be programmed to emulate
-    /// different failure modes of a <see cref="Transport"/> implementation. TestTransport keeps a log of the activities
-    /// it was requested to do. This class is not optimized for performance and MUST not be used in production systems.
+    ///     Transport implementation used for testing.
+    ///     The TestTransport is basically shared memory between actor systems. It can be programmed to emulate
+    ///     different failure modes of a <see cref="Transport" /> implementation. TestTransport keeps a log of the activities
+    ///     it was requested to do. This class is not optimized for performance and MUST not be used in production systems.
     /// </summary>
     public class TestTransport : Transport
     {
-
-
-        public readonly Address LocalAddress;
+        private readonly TaskCompletionSource<IAssociationEventListener> _associationListenerPromise =
+            new TaskCompletionSource<IAssociationEventListener>();
 
         private readonly AssociationRegistry _registry;
+        /// <summary>
+        /// TBD
+        /// </summary>
+        public readonly SwitchableLoggedBehavior<Address, AssociationHandle> AssociateBehavior;
+        /// <summary>
+        /// TBD
+        /// </summary>
+        public readonly SwitchableLoggedBehavior<TestAssociationHandle, bool> DisassociateBehavior;
+        /*
+         * Programmable behaviors
+         */
 
-        private TaskCompletionSource<IAssociationEventListener> _associationListenerPromise
-        {
-            get
-            {
-                return new TaskCompletionSource<IAssociationEventListener>();
-            }
-        }
+        /// <summary>
+        /// TBD
+        /// </summary>
+        public readonly SwitchableLoggedBehavior<bool, Tuple<Address, TaskCompletionSource<IAssociationEventListener>>>
+            ListenBehavior;
 
+        /// <summary>
+        /// TBD
+        /// </summary>
+        public readonly Address LocalAddress;
+        /// <summary>
+        /// TBD
+        /// </summary>
+        public readonly SwitchableLoggedBehavior<bool, bool> ShutdownBehavior;
+        /// <summary>
+        /// TBD
+        /// </summary>
+        public readonly SwitchableLoggedBehavior<Tuple<TestAssociationHandle, ByteString>, bool> WriteBehavior;
+
+        /// <summary>
+        /// TBD
+        /// </summary>
+        /// <param name="system">TBD</param>
+        /// <param name="conf">TBD</param>
         public TestTransport(ActorSystem system, Config conf)
             : this(
-                Address.Parse(GetConfigString(conf, "local-address")), 
-                AssociationRegistry.Get(GetConfigString(conf,"registry-key")),
+                Address.Parse(GetConfigString(conf, "local-address")),
+                AssociationRegistry.Get(GetConfigString(conf, "registry-key")),
                 conf.GetByteSize("maximum-payload-bytes") ?? 32000,
-                GetConfigString(conf,"scheme-identifier")
-            ) { }
-
-        private static string GetConfigString(Config conf, string name)
+                GetConfigString(conf, "scheme-identifier")
+                )
         {
-            var value = conf.GetString(name);
-            if(value==null) throw new ConfigurationException("Please specify a value for config setting \""+name+"\"");
-            return value;
         }
 
-        public TestTransport(Address localAddress, AssociationRegistry registry, long maximumPayloadBytes = 32000, string schemeIdentifier = "test")
+        /// <summary>
+        /// TBD
+        /// </summary>
+        /// <param name="localAddress">TBD</param>
+        /// <param name="registry">TBD</param>
+        /// <param name="maximumPayloadBytes">TBD</param>
+        /// <param name="schemeIdentifier">TBD</param>
+        public TestTransport(Address localAddress, AssociationRegistry registry, long maximumPayloadBytes = 32000,
+            string schemeIdentifier = "test")
         {
             LocalAddress = localAddress;
             _registry = registry;
@@ -64,28 +92,31 @@ namespace Akka.Remote.Transport
                 new SwitchableLoggedBehavior<bool, Tuple<Address, TaskCompletionSource<IAssociationEventListener>>>(
                     x => DefaultListen(), x => _registry.LogActivity(new ListenAttempt(LocalAddress)));
             AssociateBehavior =
-                new SwitchableLoggedBehavior<Address, AssociationHandle>(DefaultAssociate, address => registry.LogActivity(new AssociateAttempt(LocalAddress, address)));
-            ShutdownBehavior = new SwitchableLoggedBehavior<bool, bool>(x => DefaultShutdown(), x => registry.LogActivity(new ShutdownAttempt(LocalAddress)));
-            DisassociateBehavior = new SwitchableLoggedBehavior<TestAssociationHandle, bool>(x =>
-            {
-                DefaultDisassociate(x);
-                return Task.Run(() => true);
-            }, remote => _registry.LogActivity(new DisassociateAttempt(remote.LocalAddress, remote.RemoteAddress)));
+                new SwitchableLoggedBehavior<Address, AssociationHandle>(DefaultAssociate,
+                    address => registry.LogActivity(new AssociateAttempt(LocalAddress, address)));
+            ShutdownBehavior = new SwitchableLoggedBehavior<bool, bool>(x => DefaultShutdown(),
+                x => registry.LogActivity(new ShutdownAttempt(LocalAddress)));
+            DisassociateBehavior = new SwitchableLoggedBehavior<TestAssociationHandle, bool>(DefaultDisassociate, remote => _registry.LogActivity(new DisassociateAttempt(remote.LocalAddress, remote.RemoteAddress)));
 
             WriteBehavior = new SwitchableLoggedBehavior<Tuple<TestAssociationHandle, ByteString>, bool>(
                 args => DefaultWriteBehavior(args.Item1, args.Item2),
-                data => _registry.LogActivity(new WriteAttempt(data.Item1.LocalAddress, data.Item1.RemoteAddress, data.Item2)));
+                data =>
+                    _registry.LogActivity(new WriteAttempt(data.Item1.LocalAddress, data.Item1.RemoteAddress, data.Item2)));
         }
 
-        /*
-         * Programmable behaviors
-         */
-        public readonly SwitchableLoggedBehavior<bool, Tuple<Address, TaskCompletionSource<IAssociationEventListener>>> ListenBehavior;
-        public readonly SwitchableLoggedBehavior<Address, AssociationHandle> AssociateBehavior;
-        public readonly SwitchableLoggedBehavior<bool, bool> ShutdownBehavior;
-        public readonly SwitchableLoggedBehavior<TestAssociationHandle, bool> DisassociateBehavior;
-        public readonly SwitchableLoggedBehavior<Tuple<TestAssociationHandle, ByteString>, bool> WriteBehavior;
+        private static string GetConfigString(Config conf, string name)
+        {
+            var value = conf.GetString(name);
+            if (value == null)
+                throw new ConfigurationException("Please specify a value for config setting \"" + name + "\"");
+            return value;
+        }
 
+        /// <summary>
+        /// TBD
+        /// </summary>
+        /// <param name="remote">TBD</param>
+        /// <returns>TBD</returns>
         public override bool IsResponsibleFor(Address remote)
         {
             return true;
@@ -93,23 +124,36 @@ namespace Akka.Remote.Transport
 
         #region Listener methods
 
+        /// <summary>
+        /// TBD
+        /// </summary>
+        /// <returns>TBD</returns>
         public override Task<Tuple<Address, TaskCompletionSource<IAssociationEventListener>>> Listen()
         {
             return ListenBehavior.Apply(true);
         }
 
+        /// <summary>
+        /// TBD
+        /// </summary>
+        /// <returns>TBD</returns>
         public Task<Tuple<Address, TaskCompletionSource<IAssociationEventListener>>> DefaultListen()
         {
             var promise = _associationListenerPromise;
             _registry.RegisterTransport(this, promise.Task);
             return
-                Task.Run(() => new Tuple<Address, TaskCompletionSource<IAssociationEventListener>>(LocalAddress, promise));
+                Task.FromResult(new Tuple<Address, TaskCompletionSource<IAssociationEventListener>>(LocalAddress, promise));
         }
 
         #endregion
 
         #region Association methods
 
+        /// <summary>
+        /// TBD
+        /// </summary>
+        /// <param name="remoteAddress">TBD</param>
+        /// <returns>TBD</returns>
         public override Task<AssociationHandle> Associate(Address remoteAddress)
         {
             return AssociateBehavior.Apply(remoteAddress);
@@ -128,27 +172,25 @@ namespace Akka.Remote.Transport
                 remoteHandle.Writeable = false;
 
                 //pass a non-writeable handle to remote first
-                var remoteAssociationListener = remoteAssociationListenerTask.Result;
+                var remoteAssociationListener = await remoteAssociationListenerTask.ConfigureAwait(false);
                 remoteAssociationListener.Notify(new InboundAssociation(remoteHandle));
                 var remoteHandlerTask = remoteHandle.ReadHandlerSource.Task;
 
                 //registration of reader at local finishes the registration and enables communication
-                await remoteHandlerTask;
-
-                var remoteListener = remoteHandlerTask.Result;
+                var remoteListener = await remoteHandlerTask.ConfigureAwait(false);
 
 #pragma warning disable 4014
                 localHandle.ReadHandlerSource.Task.ContinueWith(result =>
 #pragma warning restore 4014
                 {
                     var localListener = result.Result;
-                    _registry.RegisterListenerPair(localHandle.Key, new Tuple<IHandleEventListener, IHandleEventListener>(localListener, remoteListener));
+                    _registry.RegisterListenerPair(localHandle.Key,
+                        new Tuple<IHandleEventListener, IHandleEventListener>(localListener, remoteListener));
                     localHandle.Writeable = true;
                     remoteHandle.Writeable = true;
                 }, TaskContinuationOptions.ExecuteSynchronously);
 
-                return (AssociationHandle)localHandle;
-
+                return (AssociationHandle) localHandle;
             }
 
             throw new InvalidAssociationException(string.Format("No registered transport: {0}", remoteAddress));
@@ -167,24 +209,41 @@ namespace Akka.Remote.Transport
 
         #region Disassociation methods
 
+        /// <summary>
+        /// TBD
+        /// </summary>
+        /// <param name="handle">TBD</param>
+        /// <returns>TBD</returns>
         public Task Disassociate(TestAssociationHandle handle)
         {
             return DisassociateBehavior.Apply(handle);
         }
 
-        public Task DefaultDisassociate(TestAssociationHandle handle)
+        /// <summary>
+        /// TBD
+        /// </summary>
+        /// <param name="handle">TBD</param>
+        /// <returns>TBD</returns>
+        public Task<bool> DefaultDisassociate(TestAssociationHandle handle)
         {
             var handlers = _registry.DeregisterAssociation(handle.Key);
-            handlers.Item1.Notify(new Disassociated(DisassociateInfo.Unknown));
-            handlers.Item2.Notify(new Disassociated(DisassociateInfo.Unknown));
+            if (handlers != null)
+            {
+                handlers.Item1.Notify(new Disassociated(DisassociateInfo.Unknown));
+                handlers.Item2.Notify(new Disassociated(DisassociateInfo.Unknown));
+            }
 
-            return Task.Run(() => { });
+            return Task.FromResult(true);
         }
 
         #endregion
 
         #region Shutdown methods
 
+        /// <summary>
+        /// TBD
+        /// </summary>
+        /// <returns>TBD</returns>
         public override Task<bool> Shutdown()
         {
             return ShutdownBehavior.Apply(true);
@@ -192,13 +251,19 @@ namespace Akka.Remote.Transport
 
         private Task<bool> DefaultShutdown()
         {
-            return Task.Run(() => true);
+            return Task.FromResult(true);
         }
 
         #endregion
 
         #region Write methods
 
+        /// <summary>
+        /// TBD
+        /// </summary>
+        /// <param name="handle">TBD</param>
+        /// <param name="payload">TBD</param>
+        /// <returns>TBD</returns>
         public Task<bool> Write(TestAssociationHandle handle, ByteString payload)
         {
             return WriteBehavior.Apply(new Tuple<TestAssociationHandle, ByteString>(handle, payload));
@@ -211,7 +276,7 @@ namespace Akka.Remote.Transport
             if (remoteReadHandler != null)
             {
                 remoteReadHandler.Notify(new InboundPayload(payload));
-                return Task.Run(() => true);
+                return Task.FromResult(true);
             }
 
             return Task.Run(() =>
@@ -227,45 +292,89 @@ namespace Akka.Remote.Transport
     }
 
     /// <summary>
-    /// Base trait for remote activities that are logged by <see cref="TestTransport"/>
+    ///     Base trait for remote activities that are logged by <see cref="TestTransport" />
     /// </summary>
-    public abstract class Activity { }
+    public abstract class Activity
+    {
+    }
 
+    /// <summary>
+    /// TBD
+    /// </summary>
     public sealed class ListenAttempt : Activity
     {
+        /// <summary>
+        /// TBD
+        /// </summary>
+        /// <param name="boundAddress">TBD</param>
         public ListenAttempt(Address boundAddress)
         {
             BoundAddress = boundAddress;
         }
 
+        /// <summary>
+        /// TBD
+        /// </summary>
         public Address BoundAddress { get; private set; }
     }
 
+    /// <summary>
+    /// TBD
+    /// </summary>
     public sealed class AssociateAttempt : Activity
     {
+        /// <summary>
+        /// TBD
+        /// </summary>
+        /// <param name="localAddress">TBD</param>
+        /// <param name="remoteAddress">TBD</param>
         public AssociateAttempt(Address localAddress, Address remoteAddress)
         {
             RemoteAddress = remoteAddress;
             LocalAddress = localAddress;
         }
 
+        /// <summary>
+        /// TBD
+        /// </summary>
         public Address LocalAddress { get; private set; }
-
+        /// <summary>
+        /// TBD
+        /// </summary>
         public Address RemoteAddress { get; private set; }
     }
 
+    /// <summary>
+    /// TBD
+    /// </summary>
     public sealed class ShutdownAttempt : Activity
     {
+        /// <summary>
+        /// TBD
+        /// </summary>
+        /// <param name="boundAddress">TBD</param>
         public ShutdownAttempt(Address boundAddress)
         {
             BoundAddress = boundAddress;
         }
 
+        /// <summary>
+        /// TBD
+        /// </summary>
         public Address BoundAddress { get; private set; }
     }
 
+    /// <summary>
+    /// TBD
+    /// </summary>
     public sealed class WriteAttempt : Activity
     {
+        /// <summary>
+        /// TBD
+        /// </summary>
+        /// <param name="sender">TBD</param>
+        /// <param name="recipient">TBD</param>
+        /// <param name="payload">TBD</param>
         public WriteAttempt(Address sender, Address recipient, ByteString payload)
         {
             Payload = payload;
@@ -273,45 +382,66 @@ namespace Akka.Remote.Transport
             Sender = sender;
         }
 
+        /// <summary>
+        /// TBD
+        /// </summary>
         public Address Sender { get; private set; }
-
+        /// <summary>
+        /// TBD
+        /// </summary>
         public Address Recipient { get; private set; }
-
+        /// <summary>
+        /// TBD
+        /// </summary>
         public ByteString Payload { get; private set; }
     }
 
+    /// <summary>
+    /// TBD
+    /// </summary>
     public sealed class DisassociateAttempt : Activity
     {
+        /// <summary>
+        /// TBD
+        /// </summary>
+        /// <param name="requestor">TBD</param>
+        /// <param name="remote">TBD</param>
         public DisassociateAttempt(Address requestor, Address remote)
         {
             Remote = remote;
             Requestor = requestor;
         }
 
+        /// <summary>
+        /// TBD
+        /// </summary>
         public Address Requestor { get; private set; }
-
+        /// <summary>
+        /// TBD
+        /// </summary>
         public Address Remote { get; private set; }
     }
 
     /// <summary>
-    /// Test utility to make behavior of functions that return some Task controllable form tests.
-    /// 
-    /// This tool is able to override default behavior with any generic behavior, including failure, and exposes
-    /// control to the timing of completion of the associated Task.
-    /// 
-    /// The utility is implemented as a stack of behaviors, where the behavior on the top of the stack represents the
-    /// currently active behavior. The bottom of the stack always contains the <see cref="DefaultBehavior"/> which
-    /// can not be popped out.
+    ///     Test utility to make behavior of functions that return some Task controllable form tests.
+    ///     This tool is able to override default behavior with any generic behavior, including failure, and exposes
+    ///     control to the timing of completion of the associated Task.
+    ///     The utility is implemented as a stack of behaviors, where the behavior on the top of the stack represents the
+    ///     currently active behavior. The bottom of the stack always contains the <see cref="DefaultBehavior" /> which
+    ///     can not be popped out.
     /// </summary>
+	/// <typeparam name="TIn"></typeparam>
+	/// <typeparam name="TOut"></typeparam">
     public class SwitchableLoggedBehavior<TIn, TOut>
     {
-        public Func<TIn, Task<TOut>> DefaultBehavior { get; private set; }
-
-        public Action<TIn> LogCallback { get; private set; }
-
         private readonly ConcurrentStack<Func<TIn, Task<TOut>>> _behaviorStack =
             new ConcurrentStack<Func<TIn, Task<TOut>>>();
 
+        /// <summary>
+        /// TBD
+        /// </summary>
+        /// <param name="defaultBehavior">TBD</param>
+        /// <param name="logCallback">TBD</param>
         public SwitchableLoggedBehavior(Func<TIn, Task<TOut>> defaultBehavior, Action<TIn> logCallback)
         {
             LogCallback = logCallback;
@@ -319,6 +449,18 @@ namespace Akka.Remote.Transport
             _behaviorStack.Push(DefaultBehavior);
         }
 
+        /// <summary>
+        /// TBD
+        /// </summary>
+        public Func<TIn, Task<TOut>> DefaultBehavior { get; }
+        /// <summary>
+        /// TBD
+        /// </summary>
+        public Action<TIn> LogCallback { get; }
+
+        /// <summary>
+        /// TBD
+        /// </summary>
         public Func<TIn, Task<TOut>> CurrentBehavior
         {
             get
@@ -331,30 +473,33 @@ namespace Akka.Remote.Transport
         }
 
         /// <summary>
-        /// Changes the current behavior to the provided one
+        ///     Changes the current behavior to the provided one
         /// </summary>
-        /// <param name="behavior">Function that takes a parameter type <typeparamref name="TIn"/> and returns a Task<typeparamref name="TOut"/>.</param>
+        /// <param name="behavior">
+        ///     Function that takes a parameter type <typeparamref name="TIn" /> and returns a Task
+        ///     <typeparamref name="TOut" />.
+        /// </param>
         public void Push(Func<TIn, Task<TOut>> behavior)
         {
             _behaviorStack.Push(behavior);
         }
 
         /// <summary>
-        /// Changes the behavior to return a completed Task with the given constant value.
+        ///     Changes the behavior to return a completed Task with the given constant value.
         /// </summary>
         /// <param name="result">The constant the Task will be completed with.</param>
         public void PushConstant(TOut result)
         {
-            Push((x) => Task.Run(() => result));
+            Push(x => Task.FromResult(result));
         }
 
         /// <summary>
-        /// Changes the behavior to return a faulted Task with the given exception
+        ///     Changes the behavior to return a faulted Task with the given exception
         /// </summary>
         /// <param name="e">The exception responsible for faulting this task</param>
         public void PushError(Exception e)
         {
-            Push((x) => Task.Run(() =>
+            Push(x => Task.Run(() =>
             {
                 throw e;
 #pragma warning disable 162
@@ -364,14 +509,14 @@ namespace Akka.Remote.Transport
         }
 
         /// <summary>
-        /// Enables control of the completion of the previously active behavior. Wraps the previous behavior in
+        ///     Enables control of the completion of the previously active behavior. Wraps the previous behavior in
         /// </summary>
-        /// <returns></returns>
+        /// <returns>TBD</returns>
         public TaskCompletionSource<bool> PushDelayed()
         {
             var controlPromise = new TaskCompletionSource<bool>();
             var originalBehavior = CurrentBehavior;
-            Push((x) =>
+            Push(x =>
             {
                 controlPromise.Task.Wait();
                 return originalBehavior.Invoke(x);
@@ -380,6 +525,9 @@ namespace Akka.Remote.Transport
             return controlPromise;
         }
 
+        /// <summary>
+        /// TBD
+        /// </summary>
         public void Pop()
         {
             if (_behaviorStack.Count > 1)
@@ -389,6 +537,11 @@ namespace Akka.Remote.Transport
             }
         }
 
+        /// <summary>
+        /// TBD
+        /// </summary>
+        /// <param name="param">TBD</param>
+        /// <returns>TBD</returns>
         public Task<TOut> Apply(TIn param)
         {
             LogCallback(param);
@@ -397,33 +550,69 @@ namespace Akka.Remote.Transport
     }
 
     /// <summary>
-    /// Shared state among <see cref="TestTransport"/> instances. Coordinates the transports and the means of
-    /// communication between them.
+    ///     Shared state among <see cref="TestTransport" /> instances. Coordinates the transports and the means of
+    ///     communication between them.
     /// </summary>
+    /// <remarks>
+    ///     NOTE: This is a global shared state between different actor systems. The purpose of this class is to allow
+    ///     dynamically
+    ///     loaded TestTransports to set up a shared AssociationRegistry.Extensions could not be used for this purpose, as the
+    ///     injection
+    ///     of the shared instance must happen during the startup time of the actor system. Association registries are looked
+    ///     up via a string key. Until we find a better way to inject an AssociationRegistry to multiple actor systems it is
+    ///     strongly recommended to use long, randomly generated strings to key the registry to avoid interference between
+    ///     tests.
+    /// </remarks>
     public class AssociationRegistry
     {
+        private static readonly ConcurrentDictionary<string, AssociationRegistry> registries =
+            new ConcurrentDictionary<string, AssociationRegistry>();
+
         private readonly ConcurrentStack<Activity> _activityLog = new ConcurrentStack<Activity>();
-        private readonly ConcurrentDictionary<Address, Tuple<TestTransport, Task<IAssociationEventListener>>> _transportTable = new ConcurrentDictionary<Address, Tuple<TestTransport, Task<IAssociationEventListener>>>();
-        private readonly ConcurrentDictionary<Tuple<Address, Address>, Tuple<IHandleEventListener, IHandleEventListener>> _listenersTable = new ConcurrentDictionary<Tuple<Address, Address>, Tuple<IHandleEventListener, IHandleEventListener>>();
 
-        private static ConcurrentDictionary<string, AssociationRegistry> registries = new ConcurrentDictionary<string, AssociationRegistry>();
+        private readonly
+            ConcurrentDictionary<Tuple<Address, Address>, Tuple<IHandleEventListener, IHandleEventListener>>
+            _listenersTable =
+                new ConcurrentDictionary<Tuple<Address, Address>, Tuple<IHandleEventListener, IHandleEventListener>>();
 
+        private readonly ConcurrentDictionary<Address, Tuple<TestTransport, Task<IAssociationEventListener>>>
+            _transportTable = new ConcurrentDictionary<Address, Tuple<TestTransport, Task<IAssociationEventListener>>>();
+
+        /// <summary>
+        /// Retrieves the specified <see cref="AssociationRegistry"/> associated with the <paramref name="key"/>.
+        /// </summary>
+        /// <param name="key">The registry key - see the HOCON example for details.</param>
+        /// <returns>An existing or new <see cref="AssociationRegistry"/> instance.</returns>
+        /// <code>
+        ///     akka{
+        ///         remote{
+        ///             enabled-transports = ["akka.remote.test"]
+        ///             test{
+        ///                 registry-key = "SOME KEY"
+        ///             }
+        ///         }
+        ///     }
+        /// </code>
         public static AssociationRegistry Get(string key)
         {
             return registries.GetOrAdd(key, new AssociationRegistry());
         }
 
+        /// <summary>
+        /// Wipes out all of the <see cref="AssociationRegistry"/> instances retained by this process.
+        /// </summary>
         public static void Clear()
         {
             registries.Clear();
         }
 
         /// <summary>
-        /// Returns the remote endpoint for a pair of endpoints relative to the owner of the supplied <see cref="TestAssociationHandle"/>.
+        ///     Returns the remote endpoint for a pair of endpoints relative to the owner of the supplied
+        ///     <see cref="TestAssociationHandle" />.
         /// </summary>
         /// <param name="handle">The reference handle to determine the remote endpoint relative to</param>
         /// <param name="listenerPair">pair of listeners in initiator, receiver order</param>
-        /// <returns></returns>
+        /// <returns>TBD</returns>
         public IHandleEventListener RemoteListenerRelativeTo(TestAssociationHandle handle,
             Tuple<IHandleEventListener, IHandleEventListener> listenerPair)
         {
@@ -433,7 +622,7 @@ namespace Akka.Remote.Transport
         }
 
         /// <summary>
-        /// Logs a transport activity
+        ///     Logs a transport activity
         /// </summary>
         /// <param name="activity">The activity to be logged</param>
         public void LogActivity(Activity activity)
@@ -442,7 +631,7 @@ namespace Akka.Remote.Transport
         }
 
         /// <summary>
-        /// Gets a snapshot of the current transport activity log
+        ///     Gets a snapshot of the current transport activity log
         /// </summary>
         /// <returns>A IList of activities ordered left-to-right in chronological order (element[0] is the oldest)</returns>
         public IList<Activity> LogSnapshot()
@@ -451,7 +640,7 @@ namespace Akka.Remote.Transport
         }
 
         /// <summary>
-        /// Clears the current contents of the log
+        ///     Clears the current contents of the log
         /// </summary>
         public void ClearLog()
         {
@@ -459,18 +648,23 @@ namespace Akka.Remote.Transport
         }
 
         /// <summary>
-        /// Records a mapping between an address and the corresponding (transport, associationEventListener) pair.
+        ///     Records a mapping between an address and the corresponding (transport, associationEventListener) pair.
         /// </summary>
         /// <param name="transport">The transport that is to be registered. The address of this transport will be used as a key.</param>
-        /// <param name="associationEventListenerTask">The Task that will be completed with the listener that will handle the events for the given transport.</param>
-        public void RegisterTransport(TestTransport transport, Task<IAssociationEventListener> associationEventListenerTask)
+        /// <param name="associationEventListenerTask">
+        ///     The Task that will be completed with the listener that will handle the
+        ///     events for the given transport.
+        /// </param>
+        public void RegisterTransport(TestTransport transport,
+            Task<IAssociationEventListener> associationEventListenerTask)
         {
-            _transportTable.TryAdd(transport.LocalAddress, new Tuple<TestTransport, Task<IAssociationEventListener>>(transport, associationEventListenerTask));
+            _transportTable.TryAdd(transport.LocalAddress,
+                new Tuple<TestTransport, Task<IAssociationEventListener>>(transport, associationEventListenerTask));
         }
 
         /// <summary>
-        /// Indicates if all given transports were successfully registered. No associations can be established between
-        /// transports that are not yet registered.
+        ///     Indicates if all given transports were successfully registered. No associations can be established between
+        ///     transports that are not yet registered.
         /// </summary>
         /// <param name="addresses">The listen addresses of transports that participate in the test case.</param>
         /// <returns>True if all transports are successfully registered.</returns>
@@ -480,21 +674,29 @@ namespace Akka.Remote.Transport
         }
 
         /// <summary>
-        /// Registers two event listeners corresponding to the two endpoints of an association.
+        ///     Registers two event listeners corresponding to the two endpoints of an association.
         /// </summary>
-        /// <param name="key">Ordered pair of addresses representing an association. First element must be the address of the initiator.</param>
-        /// <param name="listeners">A pair of listeners that will be responsible for handling the events of the two endpoints
-        /// of the association. Elements in the Tuple must be in the same order as the addresses in <paramref name="key"/>.</param>
+        /// <param name="key">
+        ///     Ordered pair of addresses representing an association. First element must be the address of the
+        ///     initiator.
+        /// </param>
+        /// <param name="listeners">
+        ///     A pair of listeners that will be responsible for handling the events of the two endpoints
+        ///     of the association. Elements in the Tuple must be in the same order as the addresses in <paramref name="key" />.
+        /// </param>
         public void RegisterListenerPair(Tuple<Address, Address> key,
             Tuple<IHandleEventListener, IHandleEventListener> listeners)
         {
-            _listenersTable.AddOrUpdate(key, x => listeners, (x,y) => listeners);
+            _listenersTable.AddOrUpdate(key, x => listeners, (x, y) => listeners);
         }
 
         /// <summary>
-        /// Removes an association.
+        ///     Removes an association.
         /// </summary>
-        /// <param name="key">Ordered pair of addresses representing an association. First element must be the address of the initiator.</param>
+        /// <param name="key">
+        ///     Ordered pair of addresses representing an association. First element must be the address of the
+        ///     initiator.
+        /// </param>
         /// <returns>The original entries, or null if the key wasn't found in the table.</returns>
         public Tuple<IHandleEventListener, IHandleEventListener> DeregisterAssociation(Tuple<Address, Address> key)
         {
@@ -504,7 +706,7 @@ namespace Akka.Remote.Transport
         }
 
         /// <summary>
-        /// Tests if an association was registered.
+        ///     Tests if an association was registered.
         /// </summary>
         /// <param name="initiatorAddress">The initiator of the association.</param>
         /// <param name="remoteAddress">The other address of the association.</param>
@@ -515,8 +717,9 @@ namespace Akka.Remote.Transport
         }
 
         /// <summary>
-        /// Returns the event handler corresponding to the remote endpoint of the given local handle. In other words
-        /// it returns the listener that will receive <see cref="InboundPayload"/> events when <seealso cref="AssociationHandle.Write"/> is called.
+        ///     Returns the event handler corresponding to the remote endpoint of the given local handle. In other words
+        ///     it returns the listener that will receive <see cref="InboundPayload" /> events when
+        ///     <seealso cref="AssociationHandle.Write" /> is called.
         /// </summary>
         /// <param name="localHandle">The handle</param>
         /// <returns>The option that contains the listener if it exists.</returns>
@@ -532,7 +735,7 @@ namespace Akka.Remote.Transport
         }
 
         /// <summary>
-        /// Returns the transport bound to the given address.
+        ///     Returns the transport bound to the given address.
         /// </summary>
         /// <param name="address">The address bound to the transport.</param>
         /// <returns>The transport, if it exists.</returns>
@@ -544,11 +747,10 @@ namespace Akka.Remote.Transport
         }
 
         /// <summary>
-        /// Clears the state of the entire registry.
-        /// 
-        /// <remarks>
-        /// This method is not atomic and does not use a critical section when clearing transports, listeners, and logs.
-        /// </remarks>
+        ///     Clears the state of the entire registry.
+        ///     <remarks>
+        ///         This method is not atomic and does not use a critical section when clearing transports, listeners, and logs.
+        ///     </remarks>
         /// </summary>
         public void Reset()
         {
@@ -558,8 +760,28 @@ namespace Akka.Remote.Transport
         }
     }
 
+    /// <summary>
+    /// TBD
+    /// </summary>
     public sealed class TestAssociationHandle : AssociationHandle
     {
+        private readonly TestTransport _transport;
+        /// <summary>
+        /// TBD
+        /// </summary>
+        public readonly bool Inbound;
+        /// <summary>
+        /// TBD
+        /// </summary>
+        internal volatile bool Writeable = true;
+
+        /// <summary>
+        /// TBD
+        /// </summary>
+        /// <param name="localAddress">TBD</param>
+        /// <param name="remoteAddress">TBD</param>
+        /// <param name="transport">TBD</param>
+        /// <param name="inbound">TBD</param>
         public TestAssociationHandle(Address localAddress, Address remoteAddress, TestTransport transport, bool inbound)
             : base(localAddress, remoteAddress)
         {
@@ -567,40 +789,43 @@ namespace Akka.Remote.Transport
             _transport = transport;
         }
 
-        public readonly bool Inbound;
-
-        internal volatile bool Writeable = true;
-
-        private readonly TestTransport _transport;
-
         /// <summary>
-        /// Key used in <see cref="AssociationRegistry"/> to identify associations. Contains an ordered Tuple of addresses,
-        /// where the first address is always the initiator of the association.
+        ///     Key used in <see cref="AssociationRegistry" /> to identify associations. Contains an ordered Tuple of addresses,
+        ///     where the first address is always the initiator of the association.
         /// </summary>
         public Tuple<Address, Address> Key
         {
             get
             {
-                return !Inbound ? new Tuple<Address, Address>(LocalAddress, RemoteAddress) : new Tuple<Address, Address>(RemoteAddress, LocalAddress);
+                return !Inbound
+                    ? new Tuple<Address, Address>(LocalAddress, RemoteAddress)
+                    : new Tuple<Address, Address>(RemoteAddress, LocalAddress);
             }
         }
 
+        /// <summary>
+        /// TBD
+        /// </summary>
+        /// <param name="payload">TBD</param>
+        /// <returns>TBD</returns>
         public override bool Write(ByteString payload)
         {
             if (Writeable)
             {
                 var result = _transport.Write(this, payload);
-                result.Wait();
+                result.Wait(TimeSpan.FromSeconds(3));
                 return result.Result;
             }
 
             return false;
         }
 
+        /// <summary>
+        /// TBD
+        /// </summary>
         public override void Disassociate()
         {
             _transport.Disassociate(this);
         }
     }
 }
-

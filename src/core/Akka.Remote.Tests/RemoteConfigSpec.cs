@@ -1,17 +1,22 @@
 ﻿//-----------------------------------------------------------------------
 // <copyright file="RemoteConfigSpec.cs" company="Akka.NET Project">
-//     Copyright (C) 2009-2015 Typesafe Inc. <http://www.typesafe.com>
-//     Copyright (C) 2013-2015 Akka.NET project <https://github.com/akkadotnet/akka.net>
+//     Copyright (C) 2009-2016 Lightbend Inc. <http://www.lightbend.com>
+//     Copyright (C) 2013-2016 Akka.NET project <https://github.com/akkadotnet/akka.net>
 // </copyright>
 //-----------------------------------------------------------------------
 
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using Akka.Actor;
 using Akka.Actor.Internal;
-using Akka.Remote.Transport.Helios;
+using Akka.Remote.Transport.DotNetty;
 using Akka.TestKit;
 using Akka.Util.Internal;
 using Xunit;
+using System.Net;
+using Akka.Remote.Transport;
+using static Akka.Util.RuntimeDetector;
 
 namespace Akka.Remote.Tests
 {
@@ -20,7 +25,7 @@ namespace Akka.Remote.Tests
     {
         public RemoteConfigSpec():base(@"
                 akka.actor.provider = ""Akka.Remote.RemoteActorRefProvider, Akka.Remote""
-                akka.remote.helios.tcp.port = 0
+                akka.remote.dot-netty.tcp.port = 0
             ") {}
         
 
@@ -37,35 +42,46 @@ namespace Akka.Remote.Tests
             Assert.Equal(TimeSpan.FromSeconds(2), remoteSettings.FlushWait);
             Assert.Equal(TimeSpan.FromSeconds(10), remoteSettings.StartupTimeout);
             Assert.Equal(TimeSpan.FromSeconds(5), remoteSettings.RetryGateClosedFor);
-            //Assert.Equal("akka.remote.default-remote-dispatcher", remoteSettings.Dispatcher); //TODO: add RemoteDispatcher support
+            Assert.Equal("akka.remote.default-remote-dispatcher", remoteSettings.Dispatcher);
             Assert.True(remoteSettings.UsePassiveConnections);
             Assert.Equal(TimeSpan.FromMilliseconds(50), remoteSettings.BackoffPeriod);
             Assert.Equal(TimeSpan.FromSeconds(0.3d), remoteSettings.SysMsgAckTimeout);
             Assert.Equal(TimeSpan.FromSeconds(2), remoteSettings.SysResendTimeout);
-            Assert.Equal(1000, remoteSettings.SysMsgBufferSize);
+            Assert.Equal(20000, remoteSettings.SysMsgBufferSize);
             Assert.Equal(TimeSpan.FromMinutes(3), remoteSettings.InitialSysMsgDeliveryTimeout);
             Assert.Equal(TimeSpan.FromDays(5), remoteSettings.QuarantineDuration);
+            Assert.Equal(TimeSpan.FromDays(5), remoteSettings.QuarantineSilentSystemTimeout);
             Assert.Equal(TimeSpan.FromSeconds(30), remoteSettings.CommandAckTimeout);
             Assert.Equal(1, remoteSettings.Transports.Length);
-            Assert.Equal(typeof(HeliosTcpTransport), Type.GetType(remoteSettings.Transports.Head().TransportClass));
+            Assert.Equal(typeof(TcpTransport), Type.GetType(remoteSettings.Transports.Head().TransportClass));
             Assert.Equal(typeof(PhiAccrualFailureDetector), Type.GetType(remoteSettings.WatchFailureDetectorImplementationClass));
             Assert.Equal(TimeSpan.FromSeconds(1), remoteSettings.WatchHeartBeatInterval);
-            Assert.Equal(TimeSpan.FromSeconds(3), remoteSettings.WatchHeartbeatExpectedResponseAfter);
+            Assert.Equal(TimeSpan.FromSeconds(1), remoteSettings.WatchHeartbeatExpectedResponseAfter);
             Assert.Equal(TimeSpan.FromSeconds(1), remoteSettings.WatchUnreachableReaperInterval);
             Assert.Equal(10, remoteSettings.WatchFailureDetectorConfig.GetDouble("threshold"));
             Assert.Equal(200, remoteSettings.WatchFailureDetectorConfig.GetDouble("max-sample-size"));
             Assert.Equal(TimeSpan.FromSeconds(10), remoteSettings.WatchFailureDetectorConfig.GetTimeSpan("acceptable-heartbeat-pause"));
             Assert.Equal(TimeSpan.FromMilliseconds(100), remoteSettings.WatchFailureDetectorConfig.GetTimeSpan("min-std-deviation"));
 
-            //TODO add adapter support
+            var remoteSettingsAdaptersStandart = new List<KeyValuePair<string, Type>>()
+            {
+                new KeyValuePair<string, Type>("gremlin", typeof(FailureInjectorProvider)),
+                new KeyValuePair<string, Type>("trttl", typeof(ThrottlerProvider))
+            };
+
+            var remoteSettingsAdapters =
+                remoteSettings.Adapters.Select(kv => new KeyValuePair<string, Type>(kv.Key, Type.GetType(kv.Value)));
+
+            Assert.Equal(0, remoteSettingsAdapters.Except(remoteSettingsAdaptersStandart).Count());
+
+            remoteSettings.Config.GetString("akka.remote.log-frame-size-exceeding").ShouldBe("off");
         }
 
         [Fact]
         public void Remoting_should_be_able_to_parse_AkkaProtocol_related_config_elements()
         {
             var settings = new AkkaProtocolSettings(((RemoteActorRefProvider)((ExtendedActorSystem)Sys).Provider).RemoteSettings.Config);
-
-            //TODO fill this in when we add secure cookie support
+            
             Assert.Equal(typeof(DeadlineFailureDetector), Type.GetType(settings.TransportFailureDetectorImplementationClass));
             Assert.Equal(TimeSpan.FromSeconds(4), settings.TransportHeartBeatInterval);
             Assert.Equal(TimeSpan.FromSeconds(20), settings.TransportFailureDetectorConfig.GetTimeSpan("acceptable-heartbeat-pause"));
@@ -74,8 +90,8 @@ namespace Akka.Remote.Tests
         [Fact]
         public void Remoting_should_contain_correct_heliosTCP_values_in_ReferenceConf()
         {
-            var c = ((RemoteActorRefProvider)((ActorSystemImpl)Sys).Provider).RemoteSettings.Config.GetConfig("akka.remote.helios.tcp");
-            var s = new HeliosTransportSettings(c);
+            var c = ((RemoteActorRefProvider)((ActorSystemImpl)Sys).Provider).RemoteSettings.Config.GetConfig("akka.remote.dot-netty.tcp");
+            var s = DotNettyTransportSettings.Create(c);
 
             Assert.Equal(TimeSpan.FromSeconds(15), s.ConnectTimeout);
             Assert.Null(s.WriteBufferHighWaterMark);
@@ -90,12 +106,37 @@ namespace Akka.Remote.Tests
             Assert.True(string.IsNullOrEmpty(c.GetString("hostname")));
             Assert.Equal(2, s.ServerSocketWorkerPoolSize);
             Assert.Equal(2, s.ClientSocketWorkerPoolSize);
+            Assert.False(s.BackwardsCompatibilityModeEnabled);
+            Assert.False(s.DnsUseIpv6);
+            Assert.False(s.LogTransport);
+            Assert.False(s.EnableSsl);
         }
+
+        [Fact]
+        public void When_remoting_works_in_Mono_ip_enforcement_should_be_defaulted_to_true()
+        {
+            if (!IsMono) return; // skip IF NOT using Mono
+            var c = ((RemoteActorRefProvider)((ActorSystemImpl)Sys).Provider).RemoteSettings.Config.GetConfig("akka.remote.dot-netty.tcp");
+            var s = DotNettyTransportSettings.Create(c);
+            
+            Assert.True(s.EnforceIpFamily);
+        }
+
+        [Fact]
+        public void When_remoting_works_not_in_Mono_ip_enforcement_should_be_defaulted_to_false()
+        {
+            if (IsMono) return; // skip IF using Mono
+            var c = ((RemoteActorRefProvider)((ActorSystemImpl)Sys).Provider).RemoteSettings.Config.GetConfig("akka.remote.dot-netty.tcp");
+            var s = DotNettyTransportSettings.Create(c);
+
+            Assert.False(s.EnforceIpFamily);
+        }
+
 
         [Fact]
         public void Remoting_should_contain_correct_socket_worker_pool_configuration_values_in_ReferenceConf()
         {
-            var c = ((RemoteActorRefProvider)((ActorSystemImpl)Sys).Provider).RemoteSettings.Config.GetConfig("akka.remote.helios.tcp");
+            var c = ((RemoteActorRefProvider)((ActorSystemImpl)Sys).Provider).RemoteSettings.Config.GetConfig("akka.remote.dot-netty.tcp");
 
             // server-socket-worker-pool
             {
@@ -113,6 +154,17 @@ namespace Akka.Remote.Tests
                 Assert.Equal(2, pool.GetInt("pool-size-max"));
             }
         }
-    }
+
+        [Fact]
+        public void Remoting_should_contain_correct_hostname_values_in_ReferenceConf()
+        {
+           var c = ((RemoteActorRefProvider)((ActorSystemImpl)Sys).Provider).RemoteSettings.Config.GetConfig("akka.remote.dot-netty.tcp");
+           var s = DotNettyTransportSettings.Create(c);
+
+           //Non-specified hostnames should default to IPAddress.Any
+           Assert.Equal(IPAddress.Any.ToString(), s.Hostname);
+           Assert.Equal(IPAddress.Any.ToString(), s.PublicHostname);
+      }
+   }
 }
 

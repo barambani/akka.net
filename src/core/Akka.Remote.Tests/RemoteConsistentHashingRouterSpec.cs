@@ -1,7 +1,7 @@
 ﻿//-----------------------------------------------------------------------
-// <copyright file="RemoteRouterSpec.cs" company="Akka.NET Project">
-//     Copyright (C) 2009-2015 Typesafe Inc. <http://www.typesafe.com>
-//     Copyright (C) 2013-2015 Akka.NET project <https://github.com/akkadotnet/akka.net>
+// <copyright file="RemoteConsistentHashingRouterSpec.cs" company="Akka.NET Project">
+//     Copyright (C) 2009-2016 Lightbend Inc. <http://www.lightbend.com>
+//     Copyright (C) 2013-2016 Akka.NET project <https://github.com/akkadotnet/akka.net>
 // </copyright>
 //-----------------------------------------------------------------------
 
@@ -43,7 +43,7 @@ namespace Akka.Remote.Tests
             var keys = new List<string>(new [] { "A", "B", "C", "D", "E", "F", "G"});
             var result1 = keys.Select(k => consistentHash1.NodeFor(k).Routee);
             var result2 = keys.Select(k => consistentHash2.NodeFor(k).Routee);
-            result1.ShouldBeEquivalentTo(result2);
+            Assert.Equal(result2,result1);
         }
     }
 }

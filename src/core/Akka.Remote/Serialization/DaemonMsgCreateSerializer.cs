@@ -1,7 +1,7 @@
 ﻿//-----------------------------------------------------------------------
 // <copyright file="DaemonMsgCreateSerializer.cs" company="Akka.NET Project">
-//     Copyright (C) 2009-2015 Typesafe Inc. <http://www.typesafe.com>
-//     Copyright (C) 2013-2015 Akka.NET project <https://github.com/akkadotnet/akka.net>
+//     Copyright (C) 2009-2016 Lightbend Inc. <http://www.lightbend.com>
+//     Copyright (C) 2013-2016 Akka.NET project <https://github.com/akkadotnet/akka.net>
 // </copyright>
 //-----------------------------------------------------------------------
 
@@ -9,6 +9,7 @@ using System;
 using System.Collections.Generic;
 using Akka.Actor;
 using Akka.Configuration;
+using Akka.Remote.Proto;
 using Akka.Routing;
 using Akka.Serialization;
 using Google.ProtocolBuffers;
@@ -122,7 +123,7 @@ namespace Akka.Remote.Serialization
                 .SetPath(deploy.Path);
             if (deploy.Config != ConfigurationFactory.Empty)
                 res.SetConfig(Serialize(deploy.Config));
-            if (deploy.RouterConfig != RouterConfig.NoRouter)
+            if (deploy.RouterConfig != NoRouter.Instance)
                 res.SetRouterConfig(Serialize(deploy.RouterConfig));
             if (deploy.Scope != Deploy.NoScopeGiven)
                 res.SetScope(Serialize(deploy.Scope));
@@ -183,7 +184,7 @@ namespace Akka.Remote.Serialization
             if (protoDeploy.HasRouterConfig)
                 routerConfig = (RouterConfig)Deserialize(protoDeploy.RouterConfig, typeof(RouterConfig));
             else
-                routerConfig = RouterConfig.NoRouter;
+                routerConfig = NoRouter.Instance;
 
             Scope scope;
             if (protoDeploy.HasScope)

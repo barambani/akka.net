@@ -1,7 +1,7 @@
 ﻿//-----------------------------------------------------------------------
 // <copyright file="ConnectionContext.cs" company="Akka.NET Project">
-//     Copyright (C) 2009-2015 Typesafe Inc. <http://www.typesafe.com>
-//     Copyright (C) 2013-2015 Akka.NET project <https://github.com/akkadotnet/akka.net>
+//     Copyright (C) 2009-2016 Lightbend Inc. <http://www.lightbend.com>
+//     Copyright (C) 2013-2016 Akka.NET project <https://github.com/akkadotnet/akka.net>
 // </copyright>
 //-----------------------------------------------------------------------
 
@@ -19,6 +19,12 @@ namespace Akka.Persistence.Sqlite
     {
         private static readonly ConcurrentDictionary<string, SQLiteConnection> Remembered = new ConcurrentDictionary<string, SQLiteConnection>();
 
+        /// <summary>
+        /// TBD
+        /// </summary>
+        /// <param name="connectionString">TBD</param>
+        /// <exception cref="ArgumentNullException">TBD</exception>
+        /// <returns>TBD</returns>
         public static SQLiteConnection Remember(string connectionString)
         {
             if (string.IsNullOrEmpty(connectionString)) throw new ArgumentNullException("connectionString", "No connection string with connection to remember");
@@ -31,6 +37,10 @@ namespace Akka.Persistence.Sqlite
             return conn;
         }
 
+        /// <summary>
+        /// TBD
+        /// </summary>
+        /// <param name="connectionString">TBD</param>
         public static void Forget(string connectionString)
         {
             SQLiteConnection conn;

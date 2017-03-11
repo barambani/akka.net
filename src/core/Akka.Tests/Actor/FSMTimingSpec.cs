@@ -1,7 +1,7 @@
 ﻿//-----------------------------------------------------------------------
 // <copyright file="FSMTimingSpec.cs" company="Akka.NET Project">
-//     Copyright (C) 2009-2015 Typesafe Inc. <http://www.typesafe.com>
-//     Copyright (C) 2013-2015 Akka.NET project <https://github.com/akkadotnet/akka.net>
+//     Copyright (C) 2009-2016 Lightbend Inc. <http://www.lightbend.com>
+//     Copyright (C) 2013-2016 Akka.NET project <https://github.com/akkadotnet/akka.net>
 // </copyright>
 //-----------------------------------------------------------------------
 
@@ -194,7 +194,7 @@ namespace Akka.Tests.Actor
         /// <summary>
         /// receiveWhile is currently broken
         /// </summary>
-        [Fact(Skip = "receiveWhile is currently broken")]
+        [Fact]
         public void FSM_must_receive_and_cancel_a_repeated_timer()
         {
             fsm.Tell(State.TestRepeatedTimer, Self);
@@ -365,7 +365,7 @@ namespace Akka.Tests.Actor
                             var contextLocal = Context;
                             var numberOfMessages = ((ActorCell) contextLocal).Mailbox.NumberOfMessages;
                             SetTimer("hallo", new Tock(), TimeSpan.FromMilliseconds(1));
-                            StaticAwaitCond(() => contextLocal.AsInstanceOf<ActorCell>().Mailbox.HasUnscheduledMessages, TimeSpan.FromSeconds(1), TimeSpan.FromMilliseconds(50));
+                            StaticAwaitCond(() => contextLocal.AsInstanceOf<ActorCell>().Mailbox.HasMessages, TimeSpan.FromSeconds(1), TimeSpan.FromMilliseconds(50));
                             CancelTimer("hallo");
                             Sender.Tell(new Tick());
                             SetTimer("hallo", new Tock(), TimeSpan.FromMilliseconds(500));
@@ -418,7 +418,7 @@ namespace Akka.Tests.Actor
                             Suspend(Self);
                             SetTimer("named", new Tock(), TimeSpan.FromMilliseconds(1));
                             var contextLocal = Context;
-                            StaticAwaitCond(() =>((ActorCell) contextLocal).Mailbox.HasUnscheduledMessages,
+                            StaticAwaitCond(() =>((ActorCell) contextLocal).Mailbox.HasMessages,
                                     TimeSpan.FromSeconds(1), TimeSpan.FromMilliseconds(50));
                             nextState = Stay().ForMax(TimeSpan.FromMilliseconds(1)).Replying(new Tick());
                         })

@@ -1,7 +1,7 @@
 ﻿//-----------------------------------------------------------------------
 // <copyright file="Query.cs" company="Akka.NET Project">
-//     Copyright (C) 2009-2015 Typesafe Inc. <http://www.typesafe.com>
-//     Copyright (C) 2013-2015 Akka.NET project <https://github.com/akkadotnet/akka.net>
+//     Copyright (C) 2009-2016 Lightbend Inc. <http://www.lightbend.com>
+//     Copyright (C) 2013-2016 Akka.NET project <https://github.com/akkadotnet/akka.net>
 // </copyright>
 //-----------------------------------------------------------------------
 
@@ -11,6 +11,10 @@ using Akka.Actor;
 
 namespace Akka.Persistence.Sql.Common.Queries
 {
+    /// <summary>
+    /// TBD
+    /// </summary>
+    [Obsolete("Existing SQL persistence query will be obsoleted, once Akka.Persistence.Query will came out")]
     public interface IQueryReply { }
 
     /// <summary>
@@ -24,11 +28,24 @@ namespace Akka.Persistence.Sql.Common.Queries
     /// partition id of the persistent actor.
     /// </summary>
     [Serializable]
+    [Obsolete("Existing SQL persistence query will be obsoleted, once Akka.Persistence.Query will came out")]
     public sealed class Query: IEquatable<Query>
     {
+        /// <summary>
+        /// TBD
+        /// </summary>
         public readonly object QueryId;
+        /// <summary>
+        /// TBD
+        /// </summary>
         public readonly ISet<IHint> Hints;
-        
+
+        /// <summary>
+        /// TBD
+        /// </summary>
+        /// <param name="queryId">TBD</param>
+        /// <param name="hints">TBD</param>
+        /// <exception cref="ArgumentNullException">TBD</exception>
         public Query(object queryId, ISet<IHint> hints)
         {
             if(hints == null)
@@ -38,8 +55,18 @@ namespace Akka.Persistence.Sql.Common.Queries
             Hints = hints;
         }
 
+        /// <summary>
+        /// TBD
+        /// </summary>
+        /// <param name="queryId">TBD</param>
+        /// <param name="hints">TBD</param>
         public Query(object queryId, params IHint[] hints) : this(queryId, new HashSet<IHint>(hints)) { }
 
+        /// <summary>
+        /// TBD
+        /// </summary>
+        /// <param name="other">TBD</param>
+        /// <returns>TBD</returns>
         public bool Equals(Query other)
         {
             if (ReferenceEquals(other, null)) return false;
@@ -48,11 +75,20 @@ namespace Akka.Persistence.Sql.Common.Queries
             return Equals(QueryId, other.QueryId) && Hints.SetEquals(other.Hints);
         }
 
+        /// <summary>
+        /// TBD
+        /// </summary>
+        /// <param name="obj">TBD</param>
+        /// <returns>TBD</returns>
         public override bool Equals(object obj)
         {
             return Equals(obj as Query);
         }
 
+        /// <summary>
+        /// TBD
+        /// </summary>
+        /// <returns>TBD</returns>
         public override int GetHashCode()
         {
             unchecked
@@ -61,6 +97,10 @@ namespace Akka.Persistence.Sql.Common.Queries
             }
         }
 
+        /// <summary>
+        /// TBD
+        /// </summary>
+        /// <returns>TBD</returns>
         public override string ToString()
         {
             return string.Format("Query<id: {0}, hints: [{1}]>", QueryId, string.Join(",", Hints));
@@ -72,17 +112,34 @@ namespace Akka.Persistence.Sql.Common.Queries
     /// when the query execution has been completed and result is returned.
     /// </summary>
     [Serializable]
+    [Obsolete("Existing SQL persistence query will be obsoleted, once Akka.Persistence.Query will came out")]
     public sealed class QueryResponse : IQueryReply, IEquatable<QueryResponse>
     {
+        /// <summary>
+        /// TBD
+        /// </summary>
         public readonly object QueryId;
+        /// <summary>
+        /// TBD
+        /// </summary>
         public readonly IPersistentRepresentation Message;
 
+        /// <summary>
+        /// TBD
+        /// </summary>
+        /// <param name="queryId">TBD</param>
+        /// <param name="message">TBD</param>
         public QueryResponse(object queryId, IPersistentRepresentation message)
         {
             QueryId = queryId;
             Message = message;
         }
 
+        /// <summary>
+        /// TBD
+        /// </summary>
+        /// <param name="other">TBD</param>
+        /// <returns>TBD</returns>
         public bool Equals(QueryResponse other)
         {
             if (Equals(other, null)) return false;
@@ -91,11 +148,20 @@ namespace Akka.Persistence.Sql.Common.Queries
             return Equals(QueryId, other.QueryId) && Equals(Message, other.Message);
         }
 
+        /// <summary>
+        /// TBD
+        /// </summary>
+        /// <param name="obj">TBD</param>
+        /// <returns>TBD</returns>
         public override bool Equals(object obj)
         {
             return Equals(obj as QueryResponse);
         }
 
+        /// <summary>
+        /// TBD
+        /// </summary>
+        /// <returns>TBD</returns>
         public override int GetHashCode()
         {
             unchecked
@@ -104,6 +170,10 @@ namespace Akka.Persistence.Sql.Common.Queries
             }
         }
 
+        /// <summary>
+        /// TBD
+        /// </summary>
+        /// <returns>TBD</returns>
         public override string ToString()
         {
             return string.Format("QueryResponse<id: {0}, payload: {1}>", QueryId, Message);
@@ -114,15 +184,28 @@ namespace Akka.Persistence.Sql.Common.Queries
     /// Message send back from SQL-based journal, when <see cref="Query"/> has been successfully responded.
     /// </summary>
     [Serializable]
+    [Obsolete("Existing SQL persistence query will be obsoleted, once Akka.Persistence.Query will came out")]
     public sealed class QuerySuccess : IQueryReply, IEquatable<QuerySuccess>
     {
+        /// <summary>
+        /// TBD
+        /// </summary>
         public readonly object QueryId;
 
+        /// <summary>
+        /// TBD
+        /// </summary>
+        /// <param name="queryId">TBD</param>
         public QuerySuccess(object queryId)
         {
             QueryId = queryId;
         }
 
+        /// <summary>
+        /// TBD
+        /// </summary>
+        /// <param name="other">TBD</param>
+        /// <returns>TBD</returns>
         public bool Equals(QuerySuccess other)
         {
             if (ReferenceEquals(other, null)) return false;
@@ -130,16 +213,29 @@ namespace Akka.Persistence.Sql.Common.Queries
             return Equals(QueryId, other.QueryId);
         }
 
+        /// <summary>
+        /// TBD
+        /// </summary>
+        /// <param name="obj">TBD</param>
+        /// <returns>TBD</returns>
         public override bool Equals(object obj)
         {
             return Equals(obj as QuerySuccess);
         }
 
+        /// <summary>
+        /// TBD
+        /// </summary>
+        /// <returns>TBD</returns>
         public override int GetHashCode()
         {
             return (QueryId != null ? QueryId.GetHashCode() : 0);
         }
 
+        /// <summary>
+        /// TBD
+        /// </summary>
+        /// <returns>TBD</returns>
         public override string ToString()
         {
             return string.Format("QuerySuccess<id: {0}>", QueryId);
@@ -150,20 +246,34 @@ namespace Akka.Persistence.Sql.Common.Queries
     /// Message send back from SQL-based journal to <see cref="Query"/> sender, when the query execution has failed.
     /// </summary>
     [Serializable]
+    [Obsolete("Existing SQL persistence query will be obsoleted, once Akka.Persistence.Query will came out")]
     public sealed class QueryFailure : IQueryReply, IEquatable<QueryFailure>
     {
         /// <summary>
         /// Identifier of the correlated <see cref="Query"/>.
         /// </summary>
         public readonly object QueryId;
+        /// <summary>
+        /// TBD
+        /// </summary>
         public readonly Exception Reason;
 
+        /// <summary>
+        /// TBD
+        /// </summary>
+        /// <param name="queryId">TBD</param>
+        /// <param name="reason">TBD</param>
         public QueryFailure(object queryId, Exception reason)
         {
             QueryId = queryId;
             Reason = reason;
         }
 
+        /// <summary>
+        /// TBD
+        /// </summary>
+        /// <param name="other">TBD</param>
+        /// <returns>TBD</returns>
         public bool Equals(QueryFailure other)
         {
             if (ReferenceEquals(other, null)) return false;
@@ -171,11 +281,20 @@ namespace Akka.Persistence.Sql.Common.Queries
             return Equals(QueryId, other.QueryId) && Equals(Reason, other.Reason);
         }
 
+        /// <summary>
+        /// TBD
+        /// </summary>
+        /// <param name="obj">TBD</param>
+        /// <returns>TBD</returns>
         public override bool Equals(object obj)
         {
             return Equals(obj as QueryFailure);
         }
 
+        /// <summary>
+        /// TBD
+        /// </summary>
+        /// <returns>TBD</returns>
         public override int GetHashCode()
         {
             unchecked
@@ -184,6 +303,10 @@ namespace Akka.Persistence.Sql.Common.Queries
             }
         }
 
+        /// <summary>
+        /// TBD
+        /// </summary>
+        /// <returns>TBD</returns>
         public override string ToString()
         {
             return string.Format("QueryFailure<id: {0}, cause: {1}>", QueryId, Reason);

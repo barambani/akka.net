@@ -1,7 +1,7 @@
 ﻿//-----------------------------------------------------------------------
 // <copyright file="DataTypes.cs" company="Akka.NET Project">
-//     Copyright (C) 2009-2015 Typesafe Inc. <http://www.typesafe.com>
-//     Copyright (C) 2013-2015 Akka.NET project <https://github.com/akkadotnet/akka.net>
+//     Copyright (C) 2009-2016 Lightbend Inc. <http://www.lightbend.com>
+//     Copyright (C) 2013-2016 Akka.NET project <https://github.com/akkadotnet/akka.net>
 // </copyright>
 //-----------------------------------------------------------------------
 
@@ -434,7 +434,7 @@ namespace Akka.Remote.TestKit
             {
                 int hashCode = (_node != null ? _node.GetHashCode() : 0);
                 hashCode = (hashCode * 397) ^ (_target != null ? _target.GetHashCode() : 0);
-                hashCode = (hashCode * 397) ^ (_direction != null ? _direction.GetHashCode() : 0);
+                hashCode = (hashCode * 397) ^ _direction.GetHashCode();
                 hashCode = (hashCode * 397) ^ _rateMBit.GetHashCode();
                 return hashCode;
             }
@@ -496,7 +496,7 @@ namespace Akka.Remote.TestKit
             unchecked
             {
                 var hashCode = (_target != null ? _target.GetHashCode() : 0);
-                hashCode = (hashCode * 397) ^ (_direction != null ? _direction.GetHashCode() : 0);
+                hashCode = (hashCode * 397) ^ _direction.GetHashCode();
                 hashCode = (hashCode * 397) ^ _rateMBit.GetHashCode();
                 return hashCode;
             }

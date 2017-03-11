@@ -1,7 +1,7 @@
 ﻿//-----------------------------------------------------------------------
 // <copyright file="TaskExtensions.cs" company="Akka.NET Project">
-//     Copyright (C) 2009-2015 Typesafe Inc. <http://www.typesafe.com>
-//     Copyright (C) 2013-2015 Akka.NET project <https://github.com/akkadotnet/akka.net>
+//     Copyright (C) 2009-2016 Lightbend Inc. <http://www.lightbend.com>
+//     Copyright (C) 2013-2016 Akka.NET project <https://github.com/akkadotnet/akka.net>
 // </copyright>
 //-----------------------------------------------------------------------
 
@@ -10,8 +10,18 @@ using System.Threading.Tasks;
 
 namespace Akka.Util.Internal
 {
+    /// <summary>
+    /// TBD
+    /// </summary>
     public static class TaskExtensions
     {
+        /// <summary>
+        /// TBD
+        /// </summary>
+        /// <typeparam name="TTask">TBD</typeparam>
+        /// <typeparam name="TResult">TBD</typeparam>
+        /// <param name="task">TBD</param>
+        /// <returns>TBD</returns>
         public static Task<TResult> CastTask<TTask, TResult>(this Task<TTask> task)
         {
             if (task.IsCompleted)

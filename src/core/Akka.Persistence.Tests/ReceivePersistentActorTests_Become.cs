@@ -1,7 +1,7 @@
 ﻿//-----------------------------------------------------------------------
 // <copyright file="ReceivePersistentActorTests_Become.cs" company="Akka.NET Project">
-//     Copyright (C) 2009-2015 Typesafe Inc. <http://www.typesafe.com>
-//     Copyright (C) 2013-2015 Akka.NET project <https://github.com/akkadotnet/akka.net>
+//     Copyright (C) 2009-2016 Lightbend Inc. <http://www.lightbend.com>
+//     Copyright (C) 2013-2016 Akka.NET project <https://github.com/akkadotnet/akka.net>
 // </copyright>
 //-----------------------------------------------------------------------
 
@@ -39,7 +39,7 @@ namespace Akka.Persistence.Tests
             ExpectMsg<UnhandledMessage>(m => ((int)m.Message) == 4711 && m.Recipient == actor);
         }
 
-        [Fact(Skip = "FIXME: stash dedupes based on reference equality causes this to fail")]
+        [Fact]
         public void Given_persistent_actor_that_has_called_Become_When_it_calls_Unbecome_Then_it_switches_back_command_handler()
         {
             //Given

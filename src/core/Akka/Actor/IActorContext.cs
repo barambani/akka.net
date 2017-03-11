@@ -1,44 +1,61 @@
 ﻿//-----------------------------------------------------------------------
 // <copyright file="IActorContext.cs" company="Akka.NET Project">
-//     Copyright (C) 2009-2015 Typesafe Inc. <http://www.typesafe.com>
-//     Copyright (C) 2013-2015 Akka.NET project <https://github.com/akkadotnet/akka.net>
+//     Copyright (C) 2009-2016 Lightbend Inc. <http://www.lightbend.com>
+//     Copyright (C) 2013-2016 Akka.NET project <https://github.com/akkadotnet/akka.net>
 // </copyright>
 //-----------------------------------------------------------------------
 
 using System;
 using System.Collections.Generic;
+using Akka.Dispatch;
 
 namespace Akka.Actor
 {
+    /// <summary>
+    /// TBD
+    /// </summary>
     public interface ICanWatch
     {
-		/// <summary>
-		/// Monitors the specified actor for termination. When the <paramref name="subject"/> terminates
-		/// the instance watching will receive a <see cref="Terminated"/> message.
-		/// <remarks>Note that if the <see cref="Terminated"/> message isn't handled by the actor,
-		/// by default the actor will crash by throwing a <see cref="DeathPactException"/>. To change
-		/// the default behavior, override <see cref="ActorBase.Unhandled"/>.
-		/// </remarks>
-		/// </summary>
-		/// <param name="subject">The actor to monitor for termination.</param>
-		/// <returns>Returns the provided subject</returns>
+        /// <summary>
+        /// Monitors the specified actor for termination. When the <paramref name="subject"/> terminates
+        /// the instance watching will receive a <see cref="Terminated"/> message.
+        /// <remarks>Note that if the <see cref="Terminated"/> message isn't handled by the actor,
+        /// by default the actor will crash by throwing a <see cref="DeathPactException"/>. To change
+        /// the default behavior, override <see cref="ActorBase.Unhandled"/>.
+        /// </remarks>
+        /// </summary>
+        /// <param name="subject">The actor to monitor for termination.</param>
+        /// <returns>Returns the provided subject</returns>
         IActorRef Watch(IActorRef subject);
 
-		/// <summary>
-		/// Stops monitoring the <paramref name="subject"/> for termination.
-		/// </summary>
-		/// <param name="subject">The actor to stop monitor for termination.</param>
-		/// <returns>Returns the provided subject</returns>
+        /// <summary>
+        /// Stops monitoring the <paramref name="subject"/> for termination.
+        /// </summary>
+        /// <param name="subject">The actor to stop monitor for termination.</param>
+        /// <returns>Returns the provided subject</returns>
         IActorRef Unwatch(IActorRef subject);
     }
 
+    /// <summary>
+    /// TBD
+    /// </summary>
     public interface IActorContext : IActorRefFactory, ICanWatch
     {
         /// <summary>
         /// Gets the <see cref="IActorRef"/> belonging to the current actor.
         /// </summary>
         IActorRef Self { get; }
+
+
+        /// <summary>
+        /// The <see cref="Props"/> used to originally create this <see cref="IActorRef"/>
+        /// </summary>
         Props Props { get; }
+
+        /// <summary>
+        /// The dispatcher this actor is running on
+        /// </summary>
+        MessageDispatcher Dispatcher { get; }
 
         /// <summary>
         /// Gets the <see cref="IActorRef"/> of the actor who sent the current message.
@@ -78,6 +95,11 @@ namespace Akka.Actor
         /// <param name="receive">The new message handler.</param>
         void BecomeStacked(Receive receive);
 
+        /// <summary>
+        /// TBD
+        /// </summary>
+        /// <param name="receive">TBD</param>
+        /// <param name="discardOld">TBD</param>
         [Obsolete("Use Become or BecomeStacked instead. This method will be removed in future versions")]
         void Become(Receive receive, bool discardOld = true);
 
@@ -88,6 +110,9 @@ namespace Akka.Actor
         /// </summary>
         void UnbecomeStacked();
 
+        /// <summary>
+        /// TBD
+        /// </summary>
         [Obsolete("Use UnbecomeStacked instead. This method will be removed in future versions")]
         void Unbecome();
 
@@ -113,6 +138,7 @@ namespace Akka.Actor
         /// If this actor has no children, 
         /// an empty collection of <see cref="IActorRef"/> is returned instead.
         /// </summary>
+        /// <returns>TBD</returns>
         IEnumerable<IActorRef> GetChildren();
 
         /// <summary>
@@ -135,6 +161,11 @@ namespace Akka.Actor
         /// <param name="timeout">The timeout. Pass in <c>null</c> to switch off this feature.</param>
         void SetReceiveTimeout(TimeSpan? timeout);
 
+        /// <summary>
+        /// Gets the inactivity deadline timeout set using <see cref="SetReceiveTimeout"/>.
+        /// </summary>
+        TimeSpan? ReceiveTimeout { get; }
+
         /*
   def self: ActorRef
   def props: Props
@@ -155,6 +186,7 @@ namespace Akka.Actor
         /// Issues a stop command to the provided <see cref="IActorRef"/>, which will cause that actor
         /// to terminate.
         /// </summary>
+        /// <param name="child">TBD</param>
         void Stop(IActorRef child);
     }
 }
